@@ -1,0 +1,15 @@
+# Jingwen Wang
+
+> I turn new AI models into things people want to try. M.S. Applied Data Science at USC (May 2027), B.S. Applied Mathematics at UC Santa Barbara. Based in Los Angeles. Looking for applied and creative AI roles: 2027 internships and full time from May 2027.
+
+## Projects
+
+- Photo to Short (building, Nov 2026): one photo + one line becomes a three-shot short. LLM shot planning, FLUX/SDXL keyframes, LoRA / IP-Adapter for character consistency, image-to-video, text-to-speech, ffmpeg assembly, Gradio demo.
+- HaX (co-founder, startup): turns a vague goal into a step-by-step workflow and runs it. GPT-4o + LangChain planning, retrieval layer, Flask API, web front end, demoed on AWS. https://github.com/gnauhuhsaij/hax
+- Sponsor-aware job finder (2026): joins 4.27M H-1B filings with live postings from 7 job boards; hybrid search, LLM scoring and a learned reranker. Recall@100 0.72 → 0.88, NDCG@10 0.44 → 0.57 offline.
+- Seeing encampments (USC IMSC research): fine-tuned detector on self-annotated Street View images (0.82 mAP@0.5); geo + visual deduplication lifted precision 0.77 → 0.83.
+
+## Links
+
+- GitHub: https://github.com/jingwenwang7179708388
+- Resume: /resume.pdf
