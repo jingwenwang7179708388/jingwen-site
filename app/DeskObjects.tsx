@@ -13,8 +13,6 @@ export function Laptop() {
       <rect x="4" y="182" width="292" height="14" rx="7" fill="#b7b2a9" />
       <circle cx="78" cy="62" r="24" fill="#141413" />
       <text x="78" y="68" textAnchor="middle" fontSize="15" fontWeight="800" fill="#fff" fontFamily="var(--font-display)">HaX</text>
-      <rect x="176" y="40" width="74" height="28" rx="14" fill="#f2a43a" />
-      <text x="213" y="59" textAnchor="middle" fontSize="12" fontWeight="700" fill="#141413" fontFamily="var(--font-display)">MCP</text>
       <rect x="120" y="120" width="96" height="30" rx="6" fill="#fff" />
       <text x="168" y="140" textAnchor="middle" fontSize="11" fill="#141413" fontFamily="var(--font-body)">ship it, then fix it</text>
       <path d="M238 128l6 12 13 2-9 9 2 13-12-6-12 6 2-13-9-9 13-2z" fill="#141413" />

@@ -1,7 +1,8 @@
 /* ====== 颜色：改这里就能换整站配色 ====== */
 :root {
   --paper: #f4f0e8;
-  --table: #e6dfd2;
+  --table: #b9844f; /* 木纹桌面的底色 */
+  --grain: 92, 50, 18; /* 木纹深色纹理（RGB） */
   --mat: #1d1d1b;
   --ink: #141413;
   --mute: #6e6a62;
@@ -36,22 +37,35 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   max-width: min(1200px, (100vh - 230px) * 1.6);
   margin: 0 auto;
   aspect-ratio: 16 / 10;
-  background: var(--table);
+  /* 暖色木纹：纯 CSS 渐变，从上到下依次叠加 */
+  background:
+    /* 光从左上方来：左上亮、右下暗 */
+    linear-gradient(135deg, rgba(255, 236, 205, 0.22) 0%, rgba(255, 236, 205, 0) 45%, rgba(40, 20, 5, 0.2) 100%),
+    /* 木板拼缝（5 块横向木板） */
+    repeating-linear-gradient(180deg, transparent 0 calc(20% - 2px), rgba(var(--grain), 0.38) calc(20% - 2px) calc(20% - 1px), rgba(255, 228, 190, 0.12) calc(20% - 1px) 20%),
+    /* 细木纹：三组间距互质的条纹叠在一起，避免看出规律 */
+    repeating-linear-gradient(178.8deg, transparent 0 5px, rgba(var(--grain), 0.1) 5px 6px, transparent 6px 13px),
+    repeating-linear-gradient(181.1deg, transparent 0 9px, rgba(255, 225, 180, 0.08) 9px 11px, transparent 11px 23px),
+    repeating-linear-gradient(179.6deg, transparent 0 17px, rgba(var(--grain), 0.13) 17px 19px, transparent 19px 41px),
+    /* 几处颜色较深的木结 / 纹理变化 */
+    radial-gradient(ellipse 22% 4% at 7% 31%, rgba(var(--grain), 0.22), transparent 70%),
+    radial-gradient(ellipse 18% 3.5% at 93% 77%, rgba(var(--grain), 0.2), transparent 70%),
+    radial-gradient(ellipse 30% 5% at 60% 4%, rgba(var(--grain), 0.12), transparent 70%),
+    linear-gradient(180deg, #c08b5a, var(--table) 50%, #b5804c);
   border-radius: 28px;
   overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(60, 30, 8, 0.18), inset 0 0 60px rgba(40, 20, 5, 0.18);
 }
 .mat {
   position: absolute; left: 13%; top: 9%; width: 74%; height: 82%;
   background: var(--mat); border-radius: 22px;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.15), 0 20px 40px rgba(0, 0, 0, 0.12);
+  /* 光从左上方来：投影落在右下 */
+  box-shadow: 1px 2px 0 rgba(30, 15, 4, 0.3), 8px 14px 30px rgba(40, 20, 5, 0.28);
 }
-.obj {
-  position: absolute; display: block;
-  transform: rotate(var(--r));
-  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.28));
-  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.25s ease;
-}
+/* 物件：位置在这里，旋转 / 投影 / 抬起 / 落下由 page.tsx 里的 motion 控制 */
+.obj { position: absolute; display: block; }
+.obj:hover, .obj:focus-visible { z-index: 2; }
+.lift { display: block; transform-origin: 50% 50%; }
 .obj svg { width: 100%; height: auto; display: block; }
 .art { position: relative; display: block; }
 .art img { width: 100%; height: auto; display: block; }
@@ -62,15 +76,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .art video.on { opacity: 1; }
 .desk.has-bg { background: #000; }
 .desk-bg { object-fit: cover; }
-.obj:not(.deco):hover,
-.obj:not(.deco):focus-visible {
-  transform: rotate(var(--r)) translateY(-8px) scale(1.04);
-  filter: drop-shadow(0 18px 18px rgba(0, 0, 0, 0.3));
-  z-index: 2;
-}
 .tip {
   position: absolute; left: 50%; bottom: -30px;
-  transform: translateX(-50%) rotate(calc(var(--r) * -1));
+  transform: translateX(-50%);
   background: var(--ink); color: #fff; font-size: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   padding: 4px 10px; border-radius: 999px; white-space: nowrap;
@@ -190,5 +198,5 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .obj, .art video { transition: none; }
+  .art video { transition: none; }
 }

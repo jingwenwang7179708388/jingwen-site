@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion, type Transition, type Variants } from "motion/react";
 import { SECTIONS, type SectionId } from "./content";
 import { DESK_ASSETS, DESK_BACKGROUND, HAS_GENERATED_DESK } from "./assets";
 import { DeskArt } from "./DeskObject";
@@ -44,6 +44,110 @@ const ITEMS: DeskItem[] = [
 ];
 
 type Origin = { x: number; y: number };
+
+// ====== 物件的投影与动效 ======
+// 光从左上方来 → 投影统一落在右下方。投影加在不旋转的外层上，
+// 所以不管物件转了多少度，投影方向都一致。
+const SHADOW = {
+  rest: "drop-shadow(1.5px 2.5px 1.5px rgba(48, 26, 8, 0.32)) drop-shadow(6px 10px 12px rgba(48, 26, 8, 0.2))",
+  lift: "drop-shadow(3px 5px 4px rgba(48, 26, 8, 0.24)) drop-shadow(14px 22px 22px rgba(48, 26, 8, 0.22))",
+};
+
+// 外层：透明度 + 投影
+const OBJ_VARIANTS: Variants = {
+  hidden: { opacity: 0, filter: SHADOW.lift },
+  rest: { opacity: 1, filter: SHADOW.rest },
+  lift: { opacity: 1, filter: SHADOW.lift },
+};
+
+// 内层：位移 + 缩放（旋转写在 style 里）
+const ART_VARIANTS: Variants = {
+  hidden: { y: -36, scale: 1.06 },
+  rest: { y: 0, scale: 1 },
+  lift: { y: -8, scale: 1.04 },
+};
+
+const HOVER_TRANSITION: Transition = { type: "spring", stiffness: 420, damping: 30 };
+const dropTransition = (i: number): Transition => ({
+  type: "spring",
+  stiffness: 260,
+  damping: 24,
+  delay: 0.15 + i * 0.07,
+  opacity: { duration: 0.35, delay: 0.15 + i * 0.07 },
+});
+
+function DeskObj({
+  item,
+  index,
+  hovered,
+  onHover,
+  onOpen,
+  children,
+}: {
+  item: DeskItem;
+  index: number;
+  hovered: boolean;
+  onHover: (on: boolean) => void;
+  onOpen?: (e: MouseEvent<HTMLElement>) => void;
+  children: ReactNode;
+}) {
+  const reduce = useReducedMotion();
+  const [landed, setLanded] = useState(false);
+
+  // 减弱动态：不落下、不抬起，投影保持静止
+  const transition: Transition = reduce
+    ? { duration: 0 }
+    : landed
+      ? HOVER_TRANSITION
+      : dropTransition(index);
+  const state = hovered && item.section && !reduce ? "lift" : "rest";
+
+  const style = {
+    left: `${item.left}%`,
+    top: `${item.top}%`,
+    width: `${item.width}%`,
+  } as CSSProperties;
+
+  const motionProps = {
+    style,
+    variants: OBJ_VARIANTS,
+    initial: "hidden",
+    animate: state,
+    transition,
+    onAnimationComplete: () => setLanded(true),
+    onMouseEnter: () => onHover(true),
+    onMouseLeave: () => onHover(false),
+  };
+
+  const art = (
+    <motion.span
+      className="lift"
+      style={{ rotate: item.rotate }}
+      variants={ART_VARIANTS}
+      transition={transition}
+    >
+      {children}
+    </motion.span>
+  );
+
+  return item.section ? (
+    <motion.button
+      className="obj"
+      onClick={onOpen}
+      onFocus={() => onHover(true)}
+      onBlur={() => onHover(false)}
+      aria-label={`Open ${item.label.replace("./", "")}`}
+      {...motionProps}
+    >
+      {art}
+      <span className="tip">{item.label}</span>
+    </motion.button>
+  ) : (
+    <motion.div className="obj deco" {...motionProps}>
+      {art}
+    </motion.div>
+  );
+}
 
 export default function Home() {
   const [open, setOpen] = useState<SectionId | null>(null);
@@ -124,45 +228,25 @@ export default function Home() {
             ) : (
               <div className="mat" />
             )}
-            {ITEMS.map((it) => {
-              const style = {
-                left: `${it.left}%`,
-                top: `${it.top}%`,
-                width: `${it.width}%`,
-                "--r": `${it.rotate}deg`,
-              } as CSSProperties;
-              const art = (
+            {ITEMS.map((it, i) => (
+              <DeskObj
+                key={it.id}
+                item={it}
+                index={i}
+                hovered={hover === it.id}
+                onHover={(on) =>
+                  setHover((h) => (on ? it.id : h === it.id ? null : h))
+                }
+                onOpen={it.section ? openFrom(it.section) : undefined}
+              >
                 <DeskArt
                   asset={DESK_ASSETS[it.id]}
                   fallback={it.art}
                   widthPct={it.width}
                   hovered={hover === it.id}
                 />
-              );
-              const hoverProps = {
-                onMouseEnter: () => setHover(it.id),
-                onMouseLeave: () => setHover((h) => (h === it.id ? null : h)),
-              };
-              return it.section ? (
-                <button
-                  key={it.id}
-                  className="obj"
-                  style={style}
-                  onClick={openFrom(it.section)}
-                  onFocus={() => setHover(it.id)}
-                  onBlur={() => setHover((h) => (h === it.id ? null : h))}
-                  aria-label={`Open ${it.label.replace("./", "")}`}
-                  {...hoverProps}
-                >
-                  {art}
-                  <span className="tip">{it.label}</span>
-                </button>
-              ) : (
-                <div key={it.id} className="obj deco" style={style} {...hoverProps}>
-                  {art}
-                </div>
-              );
-            })}
+              </DeskObj>
+            ))}
           </div>
           <p className="hint">
             click anything on the desk
