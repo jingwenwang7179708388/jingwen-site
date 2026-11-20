@@ -1,27 +1,20 @@
 // ====== 生成好的素材都登记在这里 ======
 // 文件放进 public/ 下对应的文件夹，然后把路径填进来。
-// 没填的会自动退回到 DeskObjects.tsx 里的 SVG 插画 / 占位，不会出现破图。
+// 没填的地方不显示，不会出现破图。
 
 export type Img = { src: string; w: number; h: number; alt?: string };
 
 export type DeskAsset = {
-  image?: Img; // 透明背景 PNG/WebP（抠好的物件），会替换 SVG
+  image?: Img; // 透明背景 PNG/WebP（抠好的物件）
   video?: string; // 鼠标悬停时播放的 2–3 秒循环小视频（webm 或 mp4，最好 < 1MB）
 };
 
 // key 对应 page.tsx 里每个物件的 id
-export const DESK_ASSETS: Record<string, DeskAsset> = {
-  // 例子：
-  // laptop: {
-  //   image: { src: "/desk/laptop.webp", w: 1200, h: 800 },
-  //   video: "/desk/laptop.webm",
-  // },
-};
+// 单独物件图已取消登记：书桌现在是一整张场景图 + 透明点击区域（见 page.tsx 的 HOTSPOTS）
+export const DESK_ASSETS: Record<string, DeskAsset> = {};
 
-// 整张桌面的背景图（FLUX 生成的俯拍桌面，16:10）。
-// 填了之后会替换掉现在的纯色桌面 + 黑色桌垫。
-export const DESK_BACKGROUND: Img | null = null;
-// 例子：{ src: "/desk/background.webp", w: 2400, h: 1500 }
+// 整张书桌的场景图（Blender 渲染，16:10），全屏铺满。由 desk3d/scene.py --mode final 生成
+export const DESK_BACKGROUND: Img | null = { src: "/desk/scene.jpg", w: 3840, h: 2400 };
 
 // ====== photo-to-short 项目页 ======
 export const DEMO = {

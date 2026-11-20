@@ -30,6 +30,7 @@ export type Section = {
   body: ReactNode;
   wide?: boolean; // 窗口加宽（项目页用）
   inDock?: boolean; // false = 不出现在底部导航里
+  hidden?: boolean; // true = 暂时隐藏：不出现在底部导航和阅读模式里（内容保留）
 };
 
 // ====== 实验记录：每做一个小实验就加一条，最新的放最上面 ======
@@ -351,6 +352,7 @@ export const SECTIONS: Section[] = [
   {
     id: "photos",
     title: "photos",
+    hidden: true, // 照片还没放，先隐藏
     body: (
       <div className="stack">
         <p className="lead">
@@ -417,11 +419,9 @@ export const SECTIONS: Section[] = [
           Photo to Short.
         </p>
         <ol className="pipe">
-          <li><b>Scene</b><span>Top-down desk generated at 16:10.</span><code>FLUX</code></li>
-          <li><b>One look</b><span>A small LoRA so every object shares the same light and style.</span><code>LoRA (PEFT)</code></li>
-          <li><b>Cut out</b><span>Each object separated so it can be clicked on its own.</span><code>SAM</code></li>
-          <li><b>Motion</b><span>2–3 second loops that play when you hover.</span><code>Image-to-Video</code></li>
-          <li><b>Encode</b><span>Compressed to small webm loops so the page stays fast.</span><code>ffmpeg</code></li>
+          <li><b>Scene</b><span>The desk is built and lit in a Python script, then rendered at 4K.</span><code>Blender (bpy) · Cycles</code></li>
+          <li><b>The photo</b><span>A real childhood photo, used as the texture on the print.</span><code>Blender</code></li>
+          <li><b>Hotspots</b><span>Clickable areas computed from the 3D scene, so they always line up.</span><code>bpy · Next.js</code></li>
         </ol>
         {MAKING.length > 0 && (
           <div className="making">

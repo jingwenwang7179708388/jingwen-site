@@ -1,13 +1,12 @@
-/* ====== 颜色：改这里就能换整站配色 ====== */
+/* ====== 颜色：改这里就能换整站配色（ins 极简：奶白 + 深灰） ====== */
 :root {
-  --paper: #f4f0e8;
-  --table: #b9844f; /* 木纹桌面的底色 */
-  --grain: 92, 50, 18; /* 木纹深色纹理（RGB） */
-  --mat: #1d1d1b;
-  --ink: #141413;
-  --mute: #6e6a62;
-  --line: #e3ded4;
-  --accent: #f2a43a;
+  --paper: #dedad4; /* public/desk/scene.jpg 四周 1% 边缘桌面的平均色（重新渲染后要重新取样） */
+  --ink: #2b2b2b;
+  --mute: #5c5d60; /* 在浅灰底上对比度 ≥ 4.5:1 */
+  --line: rgba(43, 43, 43, 0.1);
+  --glass: rgba(255, 255, 255, 0.55);
+  --mat: #2b2b2b; /* 视频 / 媒体的底色 */
+  --accent: #c9a27a;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -20,104 +19,107 @@ body {
 }
 a { color: inherit; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+:focus-visible { outline: 1.5px solid var(--ink); outline-offset: 3px; }
 
 .page { min-height: 100vh; padding: 28px 20px 120px; }
 
-/* ====== 顶部 ====== */
+/* ====== 顶部：名字 + 标语 / reading mode ====== */
 .top { max-width: 1200px; margin: 0 auto 22px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-.name { font-family: var(--font-display), sans-serif; font-stretch: 125%; font-weight: 800; font-size: 26px; letter-spacing: -0.01em; line-height: 1.1; }
-.tagline { color: var(--mute); margin-top: 6px; max-width: 40ch; }
-.mode { font-size: 13px; color: var(--mute); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; background: #fff; white-space: nowrap; }
+.name { font-family: var(--font-display), sans-serif; font-weight: 600; font-size: 19px; letter-spacing: 0.08em; line-height: 1.2; color: var(--ink); }
+.tagline { color: var(--mute); margin-top: 6px; max-width: 40ch; font-size: 13px; letter-spacing: 0.03em; }
+.mode {
+  font-size: 12px; letter-spacing: 0.04em; color: var(--mute); white-space: nowrap;
+  padding: 7px 14px; border-radius: 999px;
+  background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--line);
+}
 .mode:hover { color: var(--ink); }
 
-/* ====== 书桌 ====== */
-.desk {
-  position: relative;
-  max-width: min(1200px, (100vh - 230px) * 1.6);
-  margin: 0 auto;
-  aspect-ratio: 16 / 10;
-  /* 暖色木纹：纯 CSS 渐变，从上到下依次叠加 */
-  background:
-    /* 光从左上方来：左上亮、右下暗 */
-    linear-gradient(135deg, rgba(255, 236, 205, 0.22) 0%, rgba(255, 236, 205, 0) 45%, rgba(40, 20, 5, 0.2) 100%),
-    /* 木板拼缝（5 块横向木板） */
-    repeating-linear-gradient(180deg, transparent 0 calc(20% - 2px), rgba(var(--grain), 0.38) calc(20% - 2px) calc(20% - 1px), rgba(255, 228, 190, 0.12) calc(20% - 1px) 20%),
-    /* 细木纹：三组间距互质的条纹叠在一起，避免看出规律 */
-    repeating-linear-gradient(178.8deg, transparent 0 5px, rgba(var(--grain), 0.1) 5px 6px, transparent 6px 13px),
-    repeating-linear-gradient(181.1deg, transparent 0 9px, rgba(255, 225, 180, 0.08) 9px 11px, transparent 11px 23px),
-    repeating-linear-gradient(179.6deg, transparent 0 17px, rgba(var(--grain), 0.13) 17px 19px, transparent 19px 41px),
-    /* 几处颜色较深的木结 / 纹理变化 */
-    radial-gradient(ellipse 22% 4% at 7% 31%, rgba(var(--grain), 0.22), transparent 70%),
-    radial-gradient(ellipse 18% 3.5% at 93% 77%, rgba(var(--grain), 0.2), transparent 70%),
-    radial-gradient(ellipse 30% 5% at 60% 4%, rgba(var(--grain), 0.12), transparent 70%),
-    linear-gradient(180deg, #c08b5a, var(--table) 50%, #b5804c);
-  border-radius: 28px;
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(60, 30, 8, 0.18), inset 0 0 60px rgba(40, 20, 5, 0.18);
+/* 书桌模式：名字叠在画面左上，按钮在右上 */
+.page.on-desk { padding: 0; }
+.page.on-desk .top {
+  position: fixed; z-index: 3; top: 32px; left: 36px; right: 36px; max-width: none; margin: 0;
+  pointer-events: none;
 }
-.mat {
-  position: absolute; left: 13%; top: 9%; width: 74%; height: 82%;
-  background: var(--mat); border-radius: 22px;
-  /* 光从左上方来：投影落在右下 */
-  box-shadow: 1px 2px 0 rgba(30, 15, 4, 0.3), 8px 14px 30px rgba(40, 20, 5, 0.28);
+.page.on-desk .top > * { pointer-events: auto; }
+
+/* ====== 全屏场景 ====== */
+.stage { position: fixed; inset: 0; overflow: hidden; background: var(--paper); }
+/* 16:10 容器，始终盖满窗口；点击区域用百分比，所以跟着图片一起缩放 */
+.scene {
+  position: absolute; left: 50%; top: 50%;
+  width: max(100vw, 160vh); height: max(100vh, 62.5vw);
+  transform: translate(-50%, -50%);
 }
-/* 物件：位置在这里，旋转 / 投影 / 抬起 / 落下由 page.tsx 里的 motion 控制 */
-.obj { position: absolute; display: block; }
-.obj:hover, .obj:focus-visible { z-index: 2; }
-.lift { display: block; transform-origin: 50% 50%; }
-.obj svg { width: 100%; height: auto; display: block; }
-.art { position: relative; display: block; }
-.art img { width: 100%; height: auto; display: block; }
-.art video {
-  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
-  opacity: 0; transition: opacity 0.2s ease; pointer-events: none;
+.scene-img { object-fit: cover; user-select: none; }
+
+/* 透明点击区域 */
+.hot { position: absolute; display: block; border-radius: 14px; transform: rotate(var(--r)); }
+.hot.round { border-radius: 50%; }
+.glow {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: brightness(1.07); -webkit-backdrop-filter: brightness(1.07);
+  -webkit-mask-image: radial-gradient(closest-side, #000 70%, transparent);
+  mask-image: radial-gradient(closest-side, #000 70%, transparent);
 }
-.art video.on { opacity: 1; }
-.desk.has-bg { background: #000; }
-.desk-bg { object-fit: cover; }
 .tip {
-  position: absolute; left: 50%; bottom: -30px;
-  transform: translateX(-50%);
-  background: var(--ink); color: #fff; font-size: 12px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  padding: 4px 10px; border-radius: 999px; white-space: nowrap;
-  opacity: 0; transition: opacity 0.2s ease; pointer-events: none;
+  position: absolute; z-index: 2; transform: translate(-50%, -50%); pointer-events: none;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; letter-spacing: 0.02em;
+  color: var(--ink); white-space: nowrap;
+  padding: 3px 9px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
 }
-.obj:hover .tip, .obj:focus-visible .tip { opacity: 1; }
-.hint { max-width: 1200px; margin: 14px auto 0; text-align: center; font-size: 13px; color: var(--mute); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+/* ?debug=1：显示每个点击区域的边框和数字 */
+.hot.debug { outline: 1.5px dashed #e5484d; background: rgba(229, 72, 77, 0.08); }
+.hot-id {
+  position: absolute; left: 4px; top: 4px; transform: rotate(calc(var(--r) * -1)); transform-origin: 0 0;
+  font: 600 11px/1.3 ui-monospace, "SF Mono", Menlo, monospace; color: #fff; background: #e5484d;
+  padding: 1px 6px; border-radius: 4px; white-space: nowrap; pointer-events: none;
+}
+
+/* 提示放在左上角标语下面，不压住桌面下方的物件 */
+.hint {
+  position: fixed; z-index: 3; left: 36px; top: 96px; margin: 0;
+  font-size: 11.5px; color: var(--mute); letter-spacing: 0.02em;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; pointer-events: none;
+}
+.hint button { pointer-events: auto; }
 .make-link { font: inherit; color: var(--ink); border-bottom: 1px solid currentColor; }
 
-/* ====== 底部导航 ====== */
+/* ====== 底部导航：半透明白色毛玻璃 ====== */
 .dock {
-  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
-  display: flex; gap: 4px; padding: 6px;
-  background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px);
-  border: 1px solid var(--line); border-radius: 999px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  position: fixed; z-index: 4; left: 50%; bottom: 20px; transform: translateX(-50%);
+  display: flex; gap: 2px; padding: 5px;
+  background: var(--glass); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--line), 0 8px 24px rgba(43, 43, 43, 0.06);
   max-width: calc(100% - 32px); overflow-x: auto;
 }
-.dock button { font-size: 13px; padding: 8px 14px; border-radius: 999px; color: var(--mute); white-space: nowrap; }
-.dock button:hover, .dock button.on { background: var(--ink); color: #fff; }
+.dock button { font-size: 12.5px; letter-spacing: 0.02em; padding: 7px 14px; border-radius: 999px; color: var(--mute); white-space: nowrap; }
+.dock button:hover { color: var(--ink); background: rgba(255, 255, 255, 0.7); }
+.dock button.on { color: #fff; background: var(--ink); }
 
-/* ====== 弹出窗口 ====== */
+/* ====== 弹出窗口：白色、细边框、柔和投影 ====== */
 .overlay {
-  position: fixed; inset: 0; background: rgba(20, 20, 19, 0.35); backdrop-filter: blur(3px);
+  position: fixed; inset: 0; background: rgba(246, 243, 238, 0.45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: grid; place-items: center; padding: 20px; z-index: 10;
 }
 .win {
   width: min(680px, 100%); max-height: min(78vh, 760px);
-  background: var(--paper); border-radius: 18px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+  background: #fff; border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(43, 43, 43, 0.04), 0 24px 60px rgba(43, 43, 43, 0.12);
   display: flex; flex-direction: column; overflow: hidden;
   will-change: transform;
 }
 .win.wide { width: min(920px, 100%); max-height: min(86vh, 900px); }
-.win-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--mat); color: #d6d2ca; }
+.win-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #fff; color: var(--mute); border-bottom: 1px solid var(--line); }
 .dots { display: flex; gap: 6px; }
-.dots i { width: 11px; height: 11px; border-radius: 50%; background: #4a4944; }
-.dots i:first-child { background: var(--accent); }
-.win-title { flex: 1; font-size: 13px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-.x { font-size: 22px; line-height: 1; color: #d6d2ca; padding: 0 4px; }
+.dots i { width: 10px; height: 10px; border-radius: 50%; background: #e6e2dc; }
+.win-title { flex: 1; font-size: 12.5px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.x { font-size: 22px; line-height: 1; color: var(--mute); padding: 0 4px; }
+.x:hover { color: var(--ink); }
 .win-body { padding: 28px; overflow-y: auto; }
 
 /* ====== 窗口里的内容 ====== */
@@ -195,8 +197,4 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   .pipe li span, .pipe li code { grid-column: 2; }
   .pipe code { justify-self: start; white-space: normal; }
   .win-body { padding: 20px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .art video { transition: none; }
 }
