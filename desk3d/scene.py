@@ -1,13 +1,14 @@
 """Build and render the 3D desk scene for the site's home page.
 
-Cream desk, soft key light from the top-left (the look chosen as version B),
-rendered wide (2.1:1) with every object inside a safe area, so nothing is
-cut off, hidden by the dock or under the title on any window from 16:10 to
-21:9 and from 1280x800 to 2560x1440.
+Objects, light and materials are the version-B desk (the one first shipped to
+main); the canvas is simply wider/taller around it, so extra desk shows on wide
+windows instead of the objects spreading out. The page fits the CORE region
+(the version-B 16:10 framing, plus room for the laptop lid) to the window, so a
+16:10 window looks like version B and wider windows reveal more empty desk.
 
     Blender -b -P desk3d/scene.py                          # preview  -> desk3d/renders/preview-*.png
     Blender -b -P desk3d/scene.py -- --verify              # preview + check layers rebuild the full render
-    Blender -b -P desk3d/scene.py -- --mode final          # 4200x2000 -> public/desk/scene.jpg + public/desk/layers/*.png
+    Blender -b -P desk3d/scene.py -- --mode final          # final -> public/desk/scene.jpg + public/desk/layers/*.png
     DESK3D_CHECK_ONLY=1 Blender -b -P desk3d/scene.py      # layout checks only, no render
 
 Final output
@@ -15,7 +16,8 @@ Final output
                                but with the shadows they cast
   public/desk/layers/<id>.png  each clickable object + the earbuds, transparent,
                                cropped to its bounding box
-  app/desk-hotspots.json       image size, click areas, layer boxes (percent of the image)
+  app/desk-hotspots.json       image size, core region, click areas, layer boxes
+                               (percent of the image)
 
 Earlier experiments are kept in desk3d/archive/.
 Units are meters. World +X is image right, +Y is image up, the desk top is z = 0.
@@ -45,8 +47,12 @@ PHOTO = dict(path="public/desk/oldphoto.webp", crop=(62, 80, 935, 660))
 
 NOTEBOOK_LABEL = "SKILLS"
 
-ASPECT = 2.1      # render width / height
-FRAME_W = 1.6     # meters of desk across the full render width
+# Canvas: the full render, centered on the camera. The version-B frame was
+# 0.9 x 0.5625 m; this adds empty desk around it.
+CANVAS_W, CANVAS_H = 1.7, 0.8
+PX_PER_M = 3400   # final resolution: 5780 x 2720
+B_FRAME = (0.9, 0.5625)
+LAPTOP_SHIFT_X = 0.035  # as in version B: leaves the top-left free for the title
 BEVEL_CAP = 0.0003   # narrow edge bevels: no white rim on object edges (version B)
 SHAPE_BEVEL = 0.005  # bevels at least this wide shape the object (earbuds) and are kept
 
@@ -54,19 +60,21 @@ argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ap = argparse.ArgumentParser()
 ap.add_argument("--mode", choices=["preview", "final"], default="preview")
 ap.add_argument("--samples", type=int, default=None, help="override samples")
+ap.add_argument("--json-only", action="store_true",
+                help="final resolution, write app/desk-hotspots.json only (no render)")
 ap.add_argument("--verify", action="store_true",
                 help="also render the full scene and compare it with background + layers")
 args = ap.parse_args(argv)
 
+RES_FINAL = (round(CANVAS_W * PX_PER_M), round(CANVAS_H * PX_PER_M))
 MODES = {
-    "preview": dict(res=(1050, 500), samples=32, bg="desk3d/renders/preview-bg.png",
+    "preview": dict(res=(RES_FINAL[0] // 5, RES_FINAL[1] // 5), samples=32, bg="desk3d/renders/preview-bg.png",
                     layers="desk3d/renders/preview-layers", fmt="PNG"),
-    "final": dict(res=(4200, 2000), samples=256, bg="public/desk/scene.jpg",
+    "final": dict(res=RES_FINAL, samples=256, bg="public/desk/scene.jpg",
                   layers="public/desk/layers", fmt="JPEG", copy="desk3d/renders/final-bg.jpg"),
 }
-MODE = MODES[args.mode]
+MODE = MODES["final" if args.json_only else args.mode]
 W, H = MODE["res"]
-assert abs(W / H - ASPECT) < 0.01
 
 # ---------------------------------------------------------------------------
 # Reset
@@ -276,18 +284,10 @@ def solidify(ob, thickness):
     return ob
 
 
-FRAME_H = FRAME_W / ASPECT
-
-
-def at(fx, fy):
-    """Image fractions (from the top-left) -> world XY on the desk."""
-    return ((fx - 0.5) * FRAME_W, (0.5 - fy) * FRAME_H)
-
-
-def empty(name, fxy, rot_z_deg):
+def empty(name, loc, rot_z_deg):
     ob = bpy.data.objects.new(name, None)
     coll.objects.link(ob)
-    ob.location = (*at(*fxy), 0)
+    ob.location = (*loc, 0)
     ob.rotation_euler = (0, 0, math.radians(rot_z_deg))
     return ob
 
@@ -315,24 +315,22 @@ def text(name, body, size, parent, loc, mat, spacing=1.0):
 
 
 # ---------------------------------------------------------------------------
-# Desk and objects. Positions are image fractions (x, y from the top-left);
-# rotations are the original ones.
+# Desk and objects: version-B positions, angles and sizes (world meters)
 # ---------------------------------------------------------------------------
 make_obj("desk", rbox(6, 6, 0.04), M["desk"], loc=(0, 0, -0.04), smooth=False)
 
 CLICKABLE = {}  # id -> root object (each also gets its own layer)
-DECOR = {}      # id -> root object (kept fully visible; the earbuds also get a layer)
+DECOR = {}      # id -> root object (the earbuds also get a layer)
 LAYERED_DECOR = ("earbuds",)
 
 # Laptop: base 30.4 x 21.2 cm, lid opened to ~125 deg -------------------------
-laptop = empty("laptop", (0.605, 0.40), -18)
+laptop = empty("laptop", (-0.025 + LAPTOP_SHIFT_X, 0.10), -18)
 CLICKABLE["laptop"] = laptop
 BW, BD, BH = 0.304, 0.212, 0.011
 make_obj("laptop_base", rbox(BW, BD, BH, 0.012), M["silver"], laptop, bevel=0.002)
 make_obj("keyboard", rbox(0.266, 0.104, 0.0006, 0.006), M["keys"], laptop, loc=(0, 0.036, BH), bevel=0.0002)
 make_obj("trackpad", rbox(0.118, 0.072, 0.0004, 0.006), M["trackpad"], laptop, loc=(0, -0.058, BH), bevel=0.0002)
-hinge = bpy.data.objects.new("laptop_hinge", None)
-coll.objects.link(hinge)
+hinge = empty("laptop_hinge", (0, 0), 0)
 hinge.parent = laptop
 hinge.location = (0, BD / 2 - 0.002, BH)
 hinge.rotation_euler = (math.radians(58), 0, 0)  # lift the lid 58 deg up from flat-open
@@ -342,13 +340,13 @@ make_obj("bezel", rbox(0.296, 0.198, 0.0006, 0.009), M["black_gloss"], hinge, lo
 make_obj("screen", rbox(0.278, 0.176, 0.0004, 0.002), M["screen"], hinge, loc=(0, LD / 2 + 0.004, 0.0006))
 
 # Phone ---------------------------------------------------------------------
-phone = empty("phone", (0.80, 0.27), 18)
+phone = empty("phone", (0.235, 0.025), 18)
 CLICKABLE["phone"] = phone
 make_obj("phone_body", rbox(0.072, 0.150, 0.008, 0.011), M["silver"], phone, bevel=0.0015)
 make_obj("phone_screen", rbox(0.066, 0.143, 0.0004, 0.009), M["black_gloss"], phone, loc=(0, 0, 0.008))
 
 # Notebook ------------------------------------------------------------------
-notebook = empty("notebook", (0.23, 0.65), 13)
+notebook = empty("notebook", (-0.318, -0.152), 13)
 CLICKABLE["notebook"] = notebook
 make_obj("notebook_pages", rbox(0.142, 0.204, 0.016, 0.003), M["paper"], notebook, loc=(0.002, 0, 0), bevel=0.0008)
 make_obj("notebook_cover_bottom", rbox(0.148, 0.210, 0.002, 0.004), M["black"], notebook, bevel=0.0006)
@@ -357,7 +355,7 @@ make_obj("notebook_label", rbox(0.070, 0.026, 0.0004, 0.002), M["white"], notebo
 text("notebook_text", NOTEBOOK_LABEL, 0.0112, notebook, (0, 0.055, 0.0186), M["ink"], spacing=1.15)
 
 # Badge + lanyard -------------------------------------------------------------
-badge = empty("badge", (0.225, 0.34), -8)
+badge = empty("badge", (-0.31, 0.015), -8)
 CLICKABLE["badge"] = badge
 make_obj("badge_card", rbox(0.056, 0.086, 0.0016, 0.004), M["white"], badge, bevel=0.0004)
 make_obj("badge_band", rbox(0.056, 0.016, 0.0003, 0.0), M["blue"], badge, loc=(0, 0.033, 0.0016))
@@ -365,23 +363,25 @@ make_obj("badge_slot", rbox(0.014, 0.003, 0.0003, 0.0015), M["silver_dark"], bad
 make_obj("badge_clip", rbox(0.010, 0.016, 0.003, 0.003), M["silver"], badge, loc=(0, 0.049, 0.0), bevel=0.0008)
 text("badge_text", "JINGWEN WANG", 0.0054, badge, (0, -0.012, 0.0017), M["ink"], spacing=1.1)
 bpy.context.view_layer.update()
-clip = (badge.matrix_world @ Vector((0, 0.056, 0))).xy
-edge_x = at(0, 0)[0] - 0.05  # starts past the left edge of the render
+clip_world = badge.matrix_world @ Vector((0, 0.056, 0))
 LANYARDS = []
-for i, (dy0, dy1) in enumerate(((0.065, 0.030), (-0.010, 0.010))):
-    pts = [(edge_x, clip.y + dy0), (edge_x + 0.13, clip.y + dy0 + 0.004),
-           (clip.x - 0.06, clip.y + dy1), clip[:]]
+# version-B strands, continued along their own direction past the canvas edge
+edge = -CANVAS_W / 2 - 0.05
+for i, pts in enumerate([
+    [(edge, 0.125 - (-0.50 - edge) * 0.0375), (-0.50, 0.125), (-0.42, 0.128), (-0.36, 0.105), clip_world.xy[:]],
+    [(edge, 0.050 - (-0.50 - edge) * 0.10), (-0.50, 0.050), (-0.42, 0.066), (-0.36, 0.085), clip_world.xy[:]],
+]):
     LANYARDS.append(solidify(make_obj(f"lanyard_{i}", ribbon(pts, 0.010, z=0.0002 + i * 0.0012),
                                       M["lanyard"], smooth=False), 0.0008))
 
 # Print (4x6-ish, white border, slightly tilted) ------------------------------
-pr = empty("print", (0.41, 0.72), -9)
+pr = empty("print", (-0.055, -0.105), -9)
 CLICKABLE["print"] = pr
 make_obj("print_paper", rbox(0.160, 0.122, 0.0008, 0.0015), M["paper"], pr)
 make_obj("print_photo", plane_uv(*PRINT_WINDOW, PHOTO_UV), M["photo"], pr, loc=(0, 0.005, 0.00085), smooth=False)
 
 # Palette + brush -------------------------------------------------------------
-palette = empty("palette", (0.555, 0.765), 0)
+palette = empty("palette", (0.115, -0.095), 0)
 CLICKABLE["palette"] = palette
 make_obj("palette_dish", cylinder(0.05, 0.008), M["ceramic"], palette, bevel=0.0015)
 for i, c in enumerate(WATERCOLORS):
@@ -391,15 +391,15 @@ for i, c in enumerate(WATERCOLORS):
         a = math.radians(90 + (i - 1) * 60)
         x, y = 0.029 * math.cos(a), 0.029 * math.sin(a)
     make_obj(f"paint_{i}", cylinder(0.0105, 0.0006), material(f"paint_{i}", c, rough=0.5), palette, loc=(x, y, 0.008))
-brush = empty("brush", (0.65, 0.775), 20)
+brush = empty("brush", (0.168, -0.20), 58)
 DECOR["brush"] = brush
 along_x = (0, math.radians(90), 0)  # cylinders then span [loc.x, loc.x + h] along +X
-make_obj("brush_handle", cylinder(0.0028, 0.12, 32), M["wood"], brush, loc=(-0.045, 0, 0.003), rot=along_x)
-make_obj("brush_ferrule", cylinder(0.0031, 0.018, 32), M["silver"], brush, loc=(-0.063, 0, 0.003), rot=along_x)
-make_obj("brush_tip", cylinder(0.0026, 0.014, 32), M["brush_tip"], brush, loc=(-0.077, 0, 0.003), rot=along_x)
+make_obj("brush_handle", cylinder(0.0028, 0.12, 32), M["wood"], brush, loc=(0, 0, 0.003), rot=along_x)
+make_obj("brush_ferrule", cylinder(0.0031, 0.018, 32), M["silver"], brush, loc=(-0.018, 0, 0.003), rot=along_x)
+make_obj("brush_tip", cylinder(0.0026, 0.014, 32), M["brush_tip"], brush, loc=(-0.032, 0, 0.003), rot=along_x)
 
 # Paper (A4) ----------------------------------------------------------------------
-paper = empty("paper", (0.78, 0.66), 16)
+paper = empty("paper", (0.37, -0.185), 16)
 CLICKABLE["paper"] = paper
 make_obj("paper_sheet", rbox(0.210, 0.297, 0.0004), M["paper"], paper, smooth=False)
 for i in range(9):
@@ -407,7 +407,7 @@ for i in range(9):
              loc=(-0.02 if i % 3 == 0 else 0, 0.11 - i * 0.02, 0.0004), smooth=False)
 
 # Earbuds case (decor) ----------------------------------------------------------
-buds = empty("earbuds", (0.385, 0.45), -25)
+buds = empty("earbuds", (-0.095, -0.245), -25)
 DECOR["earbuds"] = buds
 make_obj("earbuds_case", rbox(0.050, 0.044, 0.022, 0.016), M["white_gloss"], buds, bevel=0.007)
 
@@ -416,7 +416,7 @@ make_obj("earbuds_case", rbox(0.050, 0.044, 0.022, 0.016), M["white_gloss"], bud
 # ---------------------------------------------------------------------------
 cam_data = bpy.data.cameras.new("cam")
 cam_data.type = "ORTHO"
-cam_data.ortho_scale = FRAME_W
+cam_data.ortho_scale = CANVAS_W  # width (landscape)
 cam = bpy.data.objects.new("cam", cam_data)
 coll.objects.link(cam)
 cam.location = (0, 0, 2.0)
@@ -535,6 +535,22 @@ spots = {k: hotspot(v) for k, v in CLICKABLE.items()}
 shapes = {k: s["corners"] for k, s in spots.items()}
 for k, root in DECOR.items():
     shapes[k] = quad(meshes(root), root.matrix_world)
+for ob in LANYARDS:
+    shapes[ob.name] = quad([ob], ob.matrix_world)
+
+# Core: the version-B 16:10 frame, extended up just enough for the laptop lid.
+# The page always shows all of it, centered (see .scene in app/globals.css).
+lid_top = max(p.y for p in world_points(meshes(laptop)))
+CORE = dict(x0=-B_FRAME[0] / 2, x1=B_FRAME[0] / 2,
+            y0=-B_FRAME[1] / 2, y1=max(B_FRAME[1] / 2, lid_top + 0.012))
+
+
+def core_fracs():  # fractions of the image, from the top-left
+    return (CORE["x0"] / CANVAS_W + 0.5, 0.5 - CORE["y1"] / CANVAS_H,
+            CORE["x1"] / CANVAS_W + 0.5, 0.5 - CORE["y0"] / CANVAS_H)
+
+
+core_px = core_fracs()
 
 # ---------------------------------------------------------------------------
 # Layout checks (run on every render)
@@ -557,19 +573,17 @@ def rect(x0, y0, x1, y1):
     return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 
 
-def inside(q, r):
-    x0, y0, _, _ = r[0][0], r[0][1], None, None
-    x1, y1 = r[2]
-    return all(x0 <= x <= x1 and y0 <= y <= y1 for x, y in q)
+# Page layout, CSS px (app/globals.css). The title's size scales with its font:
+# measured 447 x 44 px at 38px ("Hello! I'm Jingwen Wang.").
+TITLE_FONT_PX = 38  # must match .name in app/globals.css
+TITLE_LEFT, TITLE_TOP = 36, 28
+MODE_BTN = dict(right=36, top=32, width=120, height=36)
+DOCK = dict(width=580, height=46, bottom=20, offset=0.0)  # measured 570 x 44; offset (fraction of the scene width) solved below
+PAD = 14
 
 
-# Page layout, CSS px (see app/globals.css and app/page.tsx). The scene box has
-# the render's aspect and covers the window (cover-fit, centered).
-TITLE = dict(left=36, top=28, width=560, height=56)   # "Hello! I'm Jingwen Wang."
-MODE_BTN = dict(right=36, top=32, width=120, height=34)
-DOCK = dict(width=720, height=46, bottom=20)
-PAD = 14      # keep objects this far from UI
-EDGE = 10     # and from the window edge
+def title_box(font_px):
+    return (TITLE_LEFT, TITLE_TOP, TITLE_LEFT + 11.8 * font_px, TITLE_TOP + 1.2 * font_px)
 
 
 def viewports():
@@ -581,36 +595,105 @@ def viewports():
     return out
 
 
-def to_scene(vw, vh, x0, y0, x1, y1):
-    sw, sh = max(vw, vh * ASPECT), max(vh, vw / ASPECT)
-    ox, oy = (sw - vw) / 2, (sh - vh) / 2
-    return rect((x0 + ox) / sw, (y0 + oy) / sh, (x1 + ox) / sw, (y1 + oy) / sh)
+def scene_w(vw, vh):
+    """Scene width in px: the core just fits the window."""
+    cw, ch = core_px[2] - core_px[0], core_px[3] - core_px[1]
+    return min(vw / cw, vh * (W / H) / ch)
 
 
-problems = []
-for vw, vh in viewports():
-    visible = to_scene(vw, vh, EDGE, EDGE, vw - EDGE, vh - EDGE)
-    ui = {
-        "title": to_scene(vw, vh, TITLE["left"] - PAD, TITLE["top"] - PAD,
-                          TITLE["left"] + TITLE["width"] + PAD, TITLE["top"] + TITLE["height"] + PAD),
-        "reading-mode button": to_scene(vw, vh, vw - MODE_BTN["right"] - MODE_BTN["width"] - PAD, MODE_BTN["top"] - PAD,
-                                        vw - MODE_BTN["right"] + PAD, MODE_BTN["top"] + MODE_BTN["height"] + PAD),
-        "dock": to_scene(vw, vh, (vw - DOCK["width"]) / 2 - PAD, vh - DOCK["bottom"] - DOCK["height"] - PAD,
-                         (vw + DOCK["width"]) / 2 + PAD, vh - DOCK["bottom"] + PAD),
+def page_map(vw, vh):
+    """Window px -> image fractions, for the page's 'show all of the core' fit."""
+    cw, ch = core_px[2] - core_px[0], core_px[3] - core_px[1]
+    sw = scene_w(vw, vh)
+    sh = sw * H / W
+    left = vw / 2 - (core_px[0] + cw / 2) * sw
+    top = vh / 2 - (core_px[1] + ch / 2) * sh
+
+    def to_img(x0, y0, x1, y1):
+        return rect((x0 - left) / sw, (y0 - top) / sh, (x1 - left) / sw, (y1 - top) / sh)
+    return to_img
+
+
+def check(font_px):
+    out = []
+    for vw, vh in viewports():
+        to_img = page_map(vw, vh)
+        win = to_img(0, 0, vw, vh)
+        if win[0][0] < 0 or win[0][1] < 0 or win[2][0] > 1 or win[2][1] > 1:
+            out.append(f"canvas does not cover {vw}x{vh}")
+        tx0, ty0, tx1, ty1 = title_box(font_px)
+        ui = {
+            "title": to_img(tx0 - PAD, ty0 - PAD, tx1 + PAD, ty1 + PAD),
+            "reading-mode button": to_img(vw - MODE_BTN["right"] - MODE_BTN["width"] - PAD, MODE_BTN["top"] - PAD,
+                                          vw - MODE_BTN["right"] + PAD, MODE_BTN["top"] + MODE_BTN["height"] + PAD),
+            "dock": to_img((vw - DOCK["width"]) / 2 + DOCK["offset"] * scene_w(vw, vh) - PAD,
+                           vh - DOCK["bottom"] - DOCK["height"] - PAD,
+                           (vw + DOCK["width"]) / 2 + DOCK["offset"] * scene_w(vw, vh) + PAD,
+                           vh - DOCK["bottom"] + PAD),
+        }
+        for k, q in shapes.items():
+            for name, r in ui.items():
+                if name == "dock" and k not in CLICKABLE:
+                    continue  # decor (earbuds, brush, lanyard) may sit under the dock
+                if overlaps(q, r):
+                    out.append(f"{k} under {name} at {vw}x{vh}")
+    return out
+
+
+# the dock sits between the notebook and the paper: find the smallest sideways
+# shift (fraction of the scene width) that keeps it off every clickable object
+for off in sorted((i / 1000 for i in range(-40, 41)), key=abs):
+    DOCK["offset"] = off
+    if not any("under dock" in p for p in check(TITLE_FONT_PX)):
+        break
+print(f"[desk3d] dock {DOCK['width']} px wide, offset {DOCK['offset']:+.3f} x scene width")
+print(f"[desk3d] core {CORE['x1'] - CORE['x0']:.3f} x {CORE['y1'] - CORE['y0']:.3f} m"
+      f" (version B frame {B_FRAME[0]} x {B_FRAME[1]}): objects at "
+      f"{B_FRAME[1] / (CORE['y1'] - CORE['y0']) * 100:.0f}% of version-B size on a 16:10 window")
+
+problems = check(TITLE_FONT_PX)
+print(f"[desk3d] layout check ({len(viewports())} viewports, 16:10-21:9, 1280x800-2560x1440,"
+      f" title {TITLE_FONT_PX}px):", problems or "ok")
+fits = [f for f in range(48, 15, -1) if not [p for p in check(f) if "title" in p]]
+print(f"[desk3d] largest title font that clears every object: {fits[0] if fits else 'none'}px")
+
+LAYER_ROOTS = {**CLICKABLE, **{k: DECOR[k] for k in LAYERED_DECOR}}
+layered_objs = {k: meshes(v) for k, v in LAYER_ROOTS.items()}
+layer_boxes = {k: pixel_box(objs) for k, objs in layered_objs.items()}
+
+
+def pct(v, total):
+    return round(v / total * 100, 3)
+
+
+def write_json():
+    data = {
+        "image": {"w": W, "h": H, "src": "/desk/scene.jpg"},
+        # the region the page always shows in full (percent of the image)
+        "core": {"left": pct(core_px[0], 1), "top": pct(core_px[1], 1),
+                 "width": pct(core_px[2] - core_px[0], 1), "height": pct(core_px[3] - core_px[1], 1)},
+        "dock": {"offset": DOCK["offset"]},
+        "hotspots": [
+            {"id": k, **{kk: vv for kk, vv in s.items() if kk != "corners"},
+             **({"round": True} if k == "palette" else {})}
+            for k, s in spots.items()
+        ],
+        "layers": [
+            {"id": k, "src": f"/desk/layers/{k}.png", "clickable": k in CLICKABLE,
+             "left": pct(x0, W), "top": pct(y0, H), "width": pct(x1 - x0, W), "height": pct(y1 - y0, H)}
+            for k, (x0, y0, x1, y1) in layer_boxes.items()
+        ],
     }
-    for k, q in shapes.items():
-        if not inside(q, visible):
-            problems.append(f"{k} cut off at {vw}x{vh}")
-        for name, r in ui.items():
-            if overlaps(q, r):
-                problems.append(f"{k} under {name} at {vw}x{vh}")
-names = list(shapes)
-for i, a in enumerate(names):
-    for b in names[i + 1:]:
-        if overlaps(shapes[a], shapes[b]):
-            problems.append(f"{a} overlaps {b}")
-print(f"[desk3d] layout check ({len(viewports())} viewports, 16:10-21:9, 1280x800-2560x1440):",
-      problems or "ok")
+    hot_path = os.path.join(ROOT, "app/desk-hotspots.json")
+    with open(hot_path, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    print("[desk3d] wrote", hot_path)
+
+
+if args.json_only:
+    write_json()
+    sys.exit(0)
 
 if os.environ.get("DESK3D_CHECK_ONLY"):
     for k, q in shapes.items():  # bounds, image fractions from the top-left
@@ -622,8 +705,6 @@ if os.environ.get("DESK3D_CHECK_ONLY"):
 # Renders: background (layered objects hidden from the camera, shadows kept),
 # then each layered object alone on a transparent background, cropped
 # ---------------------------------------------------------------------------
-LAYER_ROOTS = {**CLICKABLE, **{k: DECOR[k] for k in LAYERED_DECOR}}
-layered_objs = {k: meshes(v) for k, v in LAYER_ROOTS.items()}
 all_meshes = [ob for ob in scene.objects if ob.type in {"MESH", "FONT"}]
 
 
@@ -686,7 +767,7 @@ for ob in layered_flat:
 layers = {}
 layer_dir = os.path.dirname(abs_path(os.path.join(MODE["layers"], "x")))
 for k, objs in layered_objs.items():
-    box = pixel_box(objs)
+    box = layer_boxes[k]
     camera_visible(objs)
     path = os.path.join(layer_dir, f"{k}.png")
     render_to(path, "PNG", transparent=True, box=box)
@@ -747,26 +828,5 @@ if args.verify:
 # Hotspots + layer boxes -> app/desk-hotspots.json (final renders only: it
 # points at the files in public/)
 # ---------------------------------------------------------------------------
-def pct(v, total):
-    return round(v / total * 100, 3)
-
-
 if args.mode == "final":
-    data = {
-        "image": {"w": W, "h": H, "src": "/desk/scene.jpg"},
-        "hotspots": [
-            {"id": k, **{kk: vv for kk, vv in s.items() if kk != "corners"},
-             **({"round": True} if k == "palette" else {})}
-            for k, s in spots.items()
-        ],
-        "layers": [
-            {"id": k, "src": f"/desk/layers/{k}.png", "clickable": k in CLICKABLE,
-             "left": pct(x0, W), "top": pct(y0, H), "width": pct(x1 - x0, W), "height": pct(y1 - y0, H)}
-            for k, (x0, y0, x1, y1) in layers.items()
-        ],
-    }
-    hot_path = os.path.join(ROOT, "app/desk-hotspots.json")
-    with open(hot_path, "w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
-    print("[desk3d] wrote", hot_path)
+    write_json()

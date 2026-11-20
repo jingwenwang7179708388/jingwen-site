@@ -1,6 +1,6 @@
 /* ====== 颜色：改这里就能换整站配色（ins 极简：奶白 + 深灰） ====== */
 :root {
-  --paper: #dfd9d1; /* public/desk/scene.jpg 四周 1% 边缘桌面的平均色（重新渲染后要重新取样） */
+  --paper: #ded9d1; /* public/desk/scene.jpg 四周 1% 边缘桌面的平均色（重新渲染后要重新取样） */
   --ink: #2b2b2b;
   --mute: #5c5d60; /* 在浅灰底上对比度 ≥ 4.5:1 */
   --line: rgba(43, 43, 43, 0.1);
@@ -45,18 +45,18 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ====== 全屏场景 ====== */
 .stage { position: fixed; inset: 0; overflow: hidden; background: var(--paper); }
-/* 容器和渲染图同比例（--ar，来自 desk-hotspots.json），始终盖满窗口；
-   图层和点击区域都用百分比，所以跟着图片一起缩放 */
+/* 场景按 desk-hotspots.json 的 core（上一版 16:10 的取景 + 电脑屏幕盖）缩放：
+   core 永远完整显示并居中；窗口越宽，两侧露出越多空桌面。
+   --scene-w 由 page.tsx 写在 main 上：min(100vw / core 宽度占比, 100vh × 图片宽高比 / core 高度占比) */
 .scene {
   position: absolute; left: 50%; top: 50%;
-  width: max(100vw, calc(100vh * var(--ar)));
-  height: max(100vh, calc(100vw / var(--ar)));
-  transform: translate(-50%, -50%);
+  width: var(--scene-w); aspect-ratio: var(--ar);
+  translate: calc(var(--cx) * -100%) calc(var(--cy) * -100%);
 }
 .scene-img { object-fit: cover; user-select: none; }
 
 /* 每个物件一层（透明 PNG），叠在背景上 */
-.layer { position: absolute; pointer-events: none; will-change: transform; }
+.layer { position: absolute; pointer-events: none; }
 .layer img { user-select: none; }
 /* 不可点的装饰：只接收悬停 */
 .deco { position: absolute; z-index: 4; }
@@ -87,14 +87,15 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ====== 底部导航：半透明白色毛玻璃 ====== */
 .dock {
-  position: fixed; z-index: 4; left: 50%; bottom: 20px; transform: translateX(-50%);
+  /* 往左右偏一点，落在物件之间的空隙里（偏移量由 desk3d/scene.py 算出，见 desk-hotspots.json 的 dock） */
+  position: fixed; z-index: 4; left: calc(50% + var(--dock-off, 0) * var(--scene-w, 0px)); bottom: 20px; transform: translateX(-50%);
   display: flex; gap: 2px; padding: 5px;
   background: var(--glass); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 999px;
   box-shadow: 0 0 0 1px var(--line), 0 8px 24px rgba(43, 43, 43, 0.06);
   max-width: calc(100% - 32px); overflow-x: auto;
 }
-.dock button { font-size: 12.5px; letter-spacing: 0.02em; padding: 7px 14px; border-radius: 999px; color: var(--mute); white-space: nowrap; }
+.dock button { font-size: 11.5px; letter-spacing: 0.02em; padding: 7px 9px; border-radius: 999px; color: var(--mute); white-space: nowrap; }
 .dock button:hover { color: var(--ink); background: rgba(255, 255, 255, 0.7); }
 .dock button.on { color: #fff; background: var(--ink); }
 

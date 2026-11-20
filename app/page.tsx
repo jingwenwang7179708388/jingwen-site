@@ -19,6 +19,15 @@ type Hotspot = Box & { id: string; rotate?: number; round?: boolean };
 
 const SCENE = desk.image;
 const ASPECT = SCENE.w / SCENE.h;
+const CORE = desk.core; // 永远完整显示的区域（百分比）
+// 场景宽度：让 core 刚好放进窗口
+const SCENE_VARS = {
+  "--ar": ASPECT,
+  "--cx": (CORE.left + CORE.width / 2) / 100,
+  "--cy": (CORE.top + CORE.height / 2) / 100,
+  "--scene-w": `min(calc(100vw / ${CORE.width / 100}), calc(100vh * ${ASPECT} / ${CORE.height / 100}))`,
+  "--dock-off": desk.dock.offset,
+} as CSSProperties;
 const LAYERS: Layer[] = desk.layers;
 const HOTSPOTS: Hotspot[] = desk.hotspots;
 
@@ -53,8 +62,11 @@ const pos = (b: Box): CSSProperties => ({
 
 // 悬停：物件从底边「长高」一点（看起来离开桌面），投影变大变淡。
 // 以底边为基准缩放，物件下方被挡住的那块桌面不会露出来。
-const REST = { scale: 1, filter: "drop-shadow(0px 0px 0px rgba(60, 45, 30, 0))" };
-const LIFT = { scale: 1.03, filter: "drop-shadow(7px 12px 14px rgba(60, 45, 30, 0.2))" };
+// 投影只在悬停时加（静止时 filter 为 none，不额外占合成层）
+const NO_SHADOW = "drop-shadow(0px 0px 0px rgba(60, 45, 30, 0))";
+const SHADOW = "drop-shadow(7px 12px 14px rgba(60, 45, 30, 0.2))";
+const REST = { scale: 1, filter: NO_SHADOW, transitionEnd: { filter: "none" } };
+const LIFT = { scale: 1.03, filter: [NO_SHADOW, SHADOW] };
 const SPRING: Transition = { type: "spring", stiffness: 320, damping: 26 };
 
 function DeskLayer({ layer, active, wiggle, onWiggleEnd }: {
@@ -65,7 +77,7 @@ function DeskLayer({ layer, active, wiggle, onWiggleEnd }: {
 }) {
   const reduce = useReducedMotion();
   const animate = reduce
-    ? REST
+    ? { scale: 1, filter: "none" }
     : wiggle
       ? { rotate: [0, -2.5, 2, -1.2, 0], scale: [1, 1.06, 1.06, 1.06, 1] }
       : active
@@ -74,7 +86,7 @@ function DeskLayer({ layer, active, wiggle, onWiggleEnd }: {
   return (
     <motion.div
       className="layer"
-      style={{ ...pos(layer), zIndex: active ? 3 : 1, transformOrigin: "50% 100%" }}
+      style={{ ...pos(layer), zIndex: active ? 3 : 1, transformOrigin: "50% 100%", filter: "none" }}
       initial={false}
       animate={animate}
       transition={wiggle ? { duration: 0.55, ease: "easeInOut" } : SPRING}
@@ -84,7 +96,7 @@ function DeskLayer({ layer, active, wiggle, onWiggleEnd }: {
         src={layer.src}
         alt=""
         fill
-        sizes={`calc(${layer.width / 100} * max(100vw, ${Math.round(ASPECT * 100)}vh))`}
+        sizes={`calc(${layer.width / 100} * min(${Math.round(10000 / CORE.width)}vw, ${Math.round((ASPECT * 10000) / CORE.height)}vh))`}
         priority
       />
     </motion.div>
@@ -160,7 +172,7 @@ export default function Home() {
     : { opacity: 0, scale: 0.12, x: origin.x, y: origin.y };
 
   return (
-    <main className={`page${reading ? "" : " on-desk"}`}>
+    <main className={`page${reading ? "" : " on-desk"}`} style={SCENE_VARS}>
       <header className="top">
         <h1 className="name">Hello! I&apos;m Jingwen Wang.</h1>
         <button className="mode" onClick={() => setReading((r) => !r)}>
@@ -180,14 +192,14 @@ export default function Home() {
       ) : (
         <>
           <div className="stage">
-            <div className="scene" style={{ "--ar": ASPECT } as CSSProperties}>
+            <div className="scene">
               <Image
                 className="scene-img"
                 src={SCENE.src}
                 alt=""
                 fill
                 priority
-                sizes={`max(100vw, ${Math.round(ASPECT * 100)}vh)`}
+                sizes={`min(${Math.round(10000 / CORE.width)}vw, ${Math.round((ASPECT * 10000) / CORE.height)}vh)`}
               />
 
               {LAYERS.map((layer) => (

@@ -1,65 +1,74 @@
 {
   "image": {
-    "w": 4200,
-    "h": 2000,
+    "w": 5780,
+    "h": 2720,
     "src": "/desk/scene.jpg"
+  },
+  "core": {
+    "left": 23.529,
+    "top": 4.531,
+    "width": 52.941,
+    "height": 80.625
+  },
+  "dock": {
+    "offset": 0.014
   },
   "hotspots": [
     {
       "id": "laptop",
-      "left": 52.083,
-      "top": 11.73,
-      "width": 19.0,
-      "height": 42.543,
+      "left": 42.666,
+      "top": 10.576,
+      "width": 17.882,
+      "height": 40.517,
       "rotate": 18.0
     },
     {
       "id": "phone",
-      "left": 77.75,
-      "top": 17.156,
-      "width": 4.5,
-      "height": 19.688,
+      "left": 61.706,
+      "top": 37.5,
+      "width": 4.235,
+      "height": 18.75,
       "rotate": -18.0
     },
     {
       "id": "notebook",
-      "left": 18.375,
-      "top": 51.219,
-      "width": 9.25,
-      "height": 27.562,
+      "left": 26.941,
+      "top": 55.875,
+      "width": 8.706,
+      "height": 26.25,
       "rotate": -13.0
     },
     {
       "id": "badge",
-      "left": 20.811,
-      "top": 26.528,
-      "width": 3.5,
-      "height": 13.125,
+      "left": 30.175,
+      "top": 41.009,
+      "width": 3.294,
+      "height": 12.5,
       "rotate": 8.0
     },
     {
       "id": "print",
-      "left": 36.0,
-      "top": 63.994,
-      "width": 10.0,
-      "height": 16.012,
+      "left": 42.059,
+      "top": 55.5,
+      "width": 9.412,
+      "height": 15.25,
       "rotate": 9.0
     },
     {
       "id": "palette",
-      "left": 52.375,
-      "top": 69.938,
-      "width": 6.25,
-      "height": 13.125,
+      "left": 53.824,
+      "top": 55.625,
+      "width": 5.882,
+      "height": 12.5,
       "rotate": -0.0,
       "round": true
     },
     {
       "id": "paper",
-      "left": 71.437,
-      "top": 46.509,
-      "width": 13.125,
-      "height": 38.981,
+      "left": 65.588,
+      "top": 54.562,
+      "width": 12.353,
+      "height": 37.125,
       "rotate": -16.0
     }
   ],
@@ -68,73 +77,73 @@
       "id": "laptop",
       "src": "/desk/layers/laptop.png",
       "clickable": true,
-      "left": 49.524,
-      "top": 6.8,
-      "width": 24.19,
-      "height": 52.35
+      "left": 40.277,
+      "top": 5.919,
+      "width": 22.734,
+      "height": 49.779
     },
     {
       "id": "phone",
       "src": "/desk/layers/phone.png",
       "clickable": true,
-      "left": 76.5,
-      "top": 16.4,
-      "width": 7.0,
-      "height": 21.2
+      "left": 60.554,
+      "top": 36.801,
+      "width": 6.54,
+      "height": 20.147
     },
     {
       "id": "notebook",
       "src": "/desk/layers/notebook.png",
       "clickable": true,
-      "left": 16.976,
-      "top": 49.3,
-      "width": 12.048,
-      "height": 31.4
+      "left": 25.657,
+      "top": 54.118,
+      "width": 11.28,
+      "height": 29.779
     },
     {
       "id": "badge",
       "src": "/desk/layers/badge.png",
       "clickable": true,
-      "left": 20.333,
-      "top": 26.4,
-      "width": 4.333,
-      "height": 13.8
+      "left": 29.758,
+      "top": 40.919,
+      "width": 4.031,
+      "height": 13.088
     },
     {
       "id": "print",
       "src": "/desk/layers/print.png",
       "clickable": true,
-      "left": 35.405,
-      "top": 62.3,
-      "width": 11.19,
-      "height": 19.4
+      "left": 41.505,
+      "top": 53.934,
+      "width": 10.519,
+      "height": 18.382
     },
     {
       "id": "palette",
       "src": "/desk/layers/palette.png",
       "clickable": true,
-      "left": 52.286,
-      "top": 69.75,
-      "width": 6.429,
-      "height": 13.5
+      "left": 53.772,
+      "top": 55.478,
+      "width": 6.003,
+      "height": 12.757
     },
     {
       "id": "paper",
       "src": "/desk/layers/paper.png",
       "clickable": true,
-      "left": 69.048,
-      "top": 43.3,
-      "width": 17.905,
-      "height": 45.4
+      "left": 63.356,
+      "top": 51.544,
+      "width": 16.817,
+      "height": 43.162
     },
     {
       "id": "earbuds",
       "src": "/desk/layers/earbuds.png",
       "clickable": false,
-      "left": 36.738,
-      "top": 41.5,
-      "width": 3.524,
-      "height": 7.0
+      "left": 42.785,
+      "top": 77.353,
+      "width": 3.253,
+      "height": 6.544
     }
   ]
 }
