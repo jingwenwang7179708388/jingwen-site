@@ -574,7 +574,7 @@ def rect(x0, y0, x1, y1):
 
 
 # Page layout, CSS px (app/globals.css). The title's size scales with its font:
-# measured 447 x 44 px at 38px ("Hello! I'm Jingwen Wang.").
+# two lines ("Hello!" / "I'm Jingwen Wang."), measured 335 x 80 px at 38px.
 TITLE_FONT_PX = 38  # must match .name in app/globals.css
 TITLE_LEFT, TITLE_TOP = 36, 28
 MODE_BTN = dict(right=36, top=32, width=120, height=36)
@@ -583,7 +583,7 @@ PAD = 14
 
 
 def title_box(font_px):
-    return (TITLE_LEFT, TITLE_TOP, TITLE_LEFT + 11.8 * font_px, TITLE_TOP + 1.2 * font_px)
+    return (TITLE_LEFT, TITLE_TOP, TITLE_LEFT + 8.9 * font_px, TITLE_TOP + 2.15 * font_px)
 
 
 def viewports():

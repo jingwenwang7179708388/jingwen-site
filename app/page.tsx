@@ -174,7 +174,11 @@ export default function Home() {
   return (
     <main className={`page${reading ? "" : " on-desk"}`} style={SCENE_VARS}>
       <header className="top">
-        <h1 className="name">Hello! I&apos;m Jingwen Wang.</h1>
+        <h1 className="name">
+          Hello!
+          <br />
+          I&apos;m Jingwen Wang.
+        </h1>
         <button className="mode" onClick={() => setReading((r) => !r)}>
           {reading ? "desk mode" : "reading mode"}
         </button>
