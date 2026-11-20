@@ -17,8 +17,8 @@ const instrument = Instrument_Sans({
 const description =
   "Jingwen Wang turns new AI models into things people want to try. M.S. Applied Data Science at USC.";
 
-// 部署后把 SITE_URL 换成你的域名；分享卡片的图放 app/opengraph-image.png（1200×630）即可自动生效
-const SITE_URL = "https://jingwen-site.vercel.app";
+// 线上网址（Vercel 项目 jingwenwang）；分享卡片的图放 app/opengraph-image.png（1200×630）即可自动生效
+const SITE_URL = "https://jingwenwang.vercel.app";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

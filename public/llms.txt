@@ -11,5 +11,6 @@
 
 ## Links
 
+- Website: https://jingwenwang.vercel.app
 - GitHub: https://github.com/jingwenwang7179708388
-- Resume: /resume.pdf
+- Resume: https://jingwenwang.vercel.app/resume.pdf
