@@ -15,6 +15,8 @@ export const LINKS = {
 
 export type SectionId =
   | "projects"
+  | "experience"
+  | "skills"
   | "demo"
   | "about"
   | "now"
@@ -177,6 +179,27 @@ export const SECTIONS: Section[] = [
           detection on the map and merged duplicates seen from different
           angles.
         </Project>
+      </div>
+    ),
+  },
+  // ====== 新栏目：先放占位内容，之后再填 ======
+  {
+    id: "experience",
+    title: "experience",
+    body: (
+      <div className="stack">
+        <p className="lead">Roles, dates and what I shipped in each.</p>
+        <p className="note">Coming soon.</p>
+      </div>
+    ),
+  },
+  {
+    id: "skills",
+    title: "skills",
+    body: (
+      <div className="stack">
+        <p className="lead">The models, tools and languages I use day to day.</p>
+        <p className="note">Coming soon.</p>
       </div>
     ),
   },

@@ -14,7 +14,7 @@ export type DeskAsset = {
 export const DESK_ASSETS: Record<string, DeskAsset> = {};
 
 // 整张书桌的场景图（Blender 渲染，16:10），全屏铺满。由 desk3d/scene.py --mode final 生成
-export const DESK_BACKGROUND: Img | null = { src: "/desk/scene.jpg", w: 3840, h: 2400 };
+export const DESK_BACKGROUND: Img | null = { src: "/desk/scene.jpg", w: 4200, h: 2000 }; // 尺寸和图层见 app/desk-hotspots.json
 
 // ====== photo-to-short 项目页 ======
 export const DEMO = {

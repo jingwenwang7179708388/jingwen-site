@@ -2,122 +2,105 @@
 
 import Image from "next/image";
 import { useEffect, useState, type CSSProperties, type MouseEvent } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { SECTIONS, type SectionId } from "./content";
-import { DESK_BACKGROUND, HAS_GENERATED_DESK } from "./assets";
-import deskHotspots from "./desk-hotspots.json";
+import { AnimatePresence, motion, useReducedMotion, type Transition } from "motion/react";
+import { SECTIONS, type Section, type SectionId } from "./content";
+import { HAS_GENERATED_DESK } from "./assets";
+import desk from "./desk-hotspots.json";
 
-// ====== 场景图上的透明点击区域 ======
-// 位置由 desk3d/scene.py 从 3D 场景算出来（app/desk-hotspots.json），不用手调：
-// left / top / width / height 是占场景图宽高的百分比，是物件「没旋转时」的框，
-// rotate 再按中心点转到物件的角度。改了场景重新渲染，json 会一起更新。
-// 网址加 ?debug=1 可以看到每个框。拿铁和耳机是纯装饰，没有点击区域。
+// ====== 书桌：背景图 + 每个物件单独一层 ======
+// 都由 desk3d/scene.py 渲染并写进 app/desk-hotspots.json（数字是占图片宽高的百分比）：
+//   image   背景图（没有可点击物件，但保留它们的阴影）
+//   layers  每个物件的透明 PNG 和位置，叠在背景上和整张渲染图一样
+//   hotspots 可点击区域（贴合物件的旋转框）
+// 网址加 ?debug=1 可以看到点击区域和图层的框。
+type Box = { left: number; top: number; width: number; height: number };
+type Layer = Box & { id: string; src: string; clickable: boolean };
+type Hotspot = Box & { id: string; rotate?: number; round?: boolean };
+
+const SCENE = desk.image;
+const ASPECT = SCENE.w / SCENE.h;
+const LAYERS: Layer[] = desk.layers;
+const HOTSPOTS: Hotspot[] = desk.hotspots;
+
+// 物件 → 栏目
 const TARGETS: Record<string, { section: SectionId; label: string }> = {
   laptop: { section: "projects", label: "./projects" },
-  notebook: { section: "now", label: "./now" },
-  badge: { section: "about", label: "./about" },
-  print: { section: "demo", label: "./photo-to-short" },
+  badge: { section: "experience", label: "./experience" },
+  notebook: { section: "skills", label: "./skills" },
+  print: { section: "about", label: "./about" },
   phone: { section: "contact", label: "./contact" },
   paper: { section: "resume", label: "./resume" },
   palette: { section: "experiments", label: "./experiments" },
 };
 
-type Hotspot = {
-  id: string;
-  section: SectionId;
-  label: string;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  rotate?: number;
-  round?: boolean;
-};
+// 底部导航的顺序；阅读模式再接上 now 和 how-this-desk-was-made
+const DOCK_ORDER: SectionId[] = [
+  "projects", "experience", "skills", "about", "demo", "experiments", "resume", "contact",
+];
+const READING_ORDER: SectionId[] = [...DOCK_ORDER, "now", "making"];
 
-const HOTSPOTS: Hotspot[] = deskHotspots.hotspots
-  .filter((h) => h.id in TARGETS)
-  .map((h) => ({ ...h, ...TARGETS[h.id] }));
+const byId = (ids: SectionId[]) =>
+  ids
+    .map((id) => SECTIONS.find((s) => s.id === id))
+    .filter((s): s is Section => !!s && !s.hidden);
 
-type Origin = { x: number; y: number };
+const pos = (b: Box): CSSProperties => ({
+  left: `${b.left}%`,
+  top: `${b.top}%`,
+  width: `${b.width}%`,
+  height: `${b.height}%`,
+});
 
-function HotspotButton({
-  spot,
-  active,
-  debug,
-  onHover,
-  onOpen,
-}: {
-  spot: Hotspot;
+// 悬停：物件从底边「长高」一点（看起来离开桌面），投影变大变淡。
+// 以底边为基准缩放，物件下方被挡住的那块桌面不会露出来。
+const REST = { scale: 1, filter: "drop-shadow(0px 0px 0px rgba(60, 45, 30, 0))" };
+const LIFT = { scale: 1.03, filter: "drop-shadow(7px 12px 14px rgba(60, 45, 30, 0.2))" };
+const SPRING: Transition = { type: "spring", stiffness: 320, damping: 26 };
+
+function DeskLayer({ layer, active, wiggle, onWiggleEnd }: {
+  layer: Layer;
   active: boolean;
-  debug: boolean;
-  onHover: (on: boolean) => void;
-  onOpen: (e: MouseEvent<HTMLElement>) => void;
+  wiggle: boolean;
+  onWiggleEnd: () => void;
 }) {
   const reduce = useReducedMotion();
-  const r = spot.rotate ?? 0;
-  const style = {
-    left: `${spot.left}%`,
-    top: `${spot.top}%`,
-    width: `${spot.width}%`,
-    height: `${spot.height}%`,
-    "--r": `${r}deg`,
-  } as CSSProperties;
-  const center = {
-    left: `${spot.left + spot.width / 2}%`,
-    top: `${spot.top + spot.height / 2}%`,
-  };
-
+  const animate = reduce
+    ? REST
+    : wiggle
+      ? { rotate: [0, -2.5, 2, -1.2, 0], scale: [1, 1.06, 1.06, 1.06, 1] }
+      : active
+        ? LIFT
+        : { ...REST, rotate: 0 };
   return (
-    <>
-      <button
-        className={`hot${spot.round ? " round" : ""}${debug ? " debug" : ""}`}
-        style={style}
-        onClick={onOpen}
-        onMouseEnter={() => onHover(true)}
-        onMouseLeave={() => onHover(false)}
-        onFocus={() => onHover(true)}
-        onBlur={() => onHover(false)}
-        aria-label={`Open ${spot.label.replace("./", "")}`}
-      >
-        {/* 悬停：物件区域微微提亮。减弱动态模式下不提亮 */}
-        <motion.span
-          className="glow"
-          initial={false}
-          animate={{ opacity: active && !reduce ? 1 : 0 }}
-          transition={{ duration: 0.3, ease: "easeOut" }}
-        />
-        {debug && (
-          <span className="hot-id">
-            {spot.id} · {spot.left},{spot.top} · {spot.width}×{spot.height}
-            {r ? ` · ${r}°` : ""}
-          </span>
-        )}
-      </button>
-      <AnimatePresence>
-        {active && (
-          <motion.span
-            key="tip"
-            className="tip"
-            style={center}
-            initial={reduce ? { opacity: 1 } : { opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, y: 4 }}
-            transition={{ duration: reduce ? 0 : 0.2, ease: "easeOut" }}
-          >
-            {spot.label}
-          </motion.span>
-        )}
-      </AnimatePresence>
-    </>
+    <motion.div
+      className="layer"
+      style={{ ...pos(layer), zIndex: active ? 3 : 1, transformOrigin: "50% 100%" }}
+      initial={false}
+      animate={animate}
+      transition={wiggle ? { duration: 0.55, ease: "easeInOut" } : SPRING}
+      onAnimationComplete={() => wiggle && onWiggleEnd()}
+    >
+      <Image
+        src={layer.src}
+        alt=""
+        fill
+        sizes={`calc(${layer.width / 100} * max(100vw, ${Math.round(ASPECT * 100)}vh))`}
+        priority
+      />
+    </motion.div>
   );
 }
+
+type Origin = { x: number; y: number };
 
 export default function Home() {
   const [open, setOpen] = useState<SectionId | null>(null);
   const [origin, setOrigin] = useState<Origin>({ x: 0, y: 0 });
   const [hover, setHover] = useState<string | null>(null);
+  const [wiggle, setWiggle] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [debug, setDebug] = useState(false);
+  const [ui, setUi] = useState("");
   const reduce = useReducedMotion();
 
   // 手机屏幕默认用阅读模式；网址带 ?debug=1 时显示点击区域
@@ -128,6 +111,24 @@ export default function Home() {
     });
     return () => cancelAnimationFrame(id);
   }, []);
+
+  // ?debug=1：量出标题、按钮、导航的实际尺寸（desk3d/scene.py 布局检查里的 TITLE / MODE_BTN / DOCK）
+  useEffect(() => {
+    if (!debug) return;
+    const measure = () => {
+      const r = (sel: string) => {
+        const b = document.querySelector(sel)?.getBoundingClientRect();
+        return b ? `${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}×${Math.round(b.height)}` : "-";
+      };
+      setUi(`window ${innerWidth}×${innerHeight} · title ${r(".name")} · mode ${r(".mode")} · dock ${r(".dock")}`);
+    };
+    const id = requestAnimationFrame(measure);
+    addEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(id);
+      removeEventListener("resize", measure);
+    };
+  }, [debug]);
 
   // 按 Esc 关闭窗口
   useEffect(() => {
@@ -149,9 +150,10 @@ export default function Home() {
   };
 
   const current = SECTIONS.find((s) => s.id === open);
-  const visible = SECTIONS.filter(
-    (s) => !s.hidden && (s.id !== "making" || HAS_GENERATED_DESK),
-  );
+  const reader = byId(READING_ORDER).filter((s) => s.id !== "making" || HAS_GENERATED_DESK);
+  const dock = byId(DOCK_ORDER);
+  const hoverOn = (id: string) => (on: boolean) =>
+    setHover((h) => (on ? id : h === id ? null : h));
 
   const hidden = reduce
     ? { opacity: 0 }
@@ -160,12 +162,7 @@ export default function Home() {
   return (
     <main className={`page${reading ? "" : " on-desk"}`}>
       <header className="top">
-        <div>
-          <h1 className="name">Jingwen Wang</h1>
-          <p className="tagline">
-            I turn new AI models into things people want to try.
-          </p>
-        </div>
+        <h1 className="name">Hello! I&apos;m Jingwen Wang.</h1>
         <button className="mode" onClick={() => setReading((r) => !r)}>
           {reading ? "desk mode" : "reading mode"}
         </button>
@@ -173,7 +170,7 @@ export default function Home() {
 
       {reading ? (
         <div className="reading">
-          {visible.map((s) => (
+          {reader.map((s) => (
             <section key={s.id} className="read-sec">
               <h2>{s.title}</h2>
               {s.body}
@@ -183,45 +180,81 @@ export default function Home() {
       ) : (
         <>
           <div className="stage">
-            <div className="scene">
-              {DESK_BACKGROUND && (
-                <Image
-                  className="scene-img"
-                  src={DESK_BACKGROUND.src}
-                  alt=""
-                  fill
-                  priority
-                  sizes="max(100vw, 160vh)"
-                />
-              )}
-              {HOTSPOTS.map((spot) => (
-                <HotspotButton
-                  key={spot.id}
-                  spot={spot}
-                  active={hover === spot.id}
-                  debug={debug}
-                  onHover={(on) =>
-                    setHover((h) => (on ? spot.id : h === spot.id ? null : h))
-                  }
-                  onOpen={openFrom(spot.section)}
+            <div className="scene" style={{ "--ar": ASPECT } as CSSProperties}>
+              <Image
+                className="scene-img"
+                src={SCENE.src}
+                alt=""
+                fill
+                priority
+                sizes={`max(100vw, ${Math.round(ASPECT * 100)}vh)`}
+              />
+
+              {LAYERS.map((layer) => (
+                <DeskLayer
+                  key={layer.id}
+                  layer={layer}
+                  active={hover === layer.id}
+                  wiggle={wiggle === layer.id}
+                  onWiggleEnd={() => setWiggle(null)}
                 />
               ))}
+
+              {/* 不可点的装饰（耳机盒）：悬停时轻轻晃一下 */}
+              {LAYERS.filter((l) => !l.clickable).map((l) => (
+                <div
+                  key={`deco-${l.id}`}
+                  className={`deco${debug ? " debug" : ""}`}
+                  style={pos(l)}
+                  onMouseEnter={() => !reduce && setWiggle(l.id)}
+                  aria-hidden="true"
+                />
+              ))}
+
+              {/* 可点击区域：贴合物件的旋转框 */}
+              {HOTSPOTS.filter((h) => h.id in TARGETS).map((h) => {
+                const t = TARGETS[h.id];
+                const r = h.rotate ?? 0;
+                return (
+                  <button
+                    key={h.id}
+                    className={`hot${h.round ? " round" : ""}${debug ? " debug" : ""}`}
+                    style={{ ...pos(h), "--r": `${r}deg` } as CSSProperties}
+                    onClick={openFrom(t.section)}
+                    onMouseEnter={() => hoverOn(h.id)(true)}
+                    onMouseLeave={() => hoverOn(h.id)(false)}
+                    onFocus={() => hoverOn(h.id)(true)}
+                    onBlur={() => hoverOn(h.id)(false)}
+                    aria-label={`Open ${t.label.replace("./", "")}`}
+                  >
+                    {debug && <span className="hot-id">{h.id}</span>}
+                  </button>
+                );
+              })}
+
+              {/* 物件上方的小标签 */}
+              <AnimatePresence>
+                {LAYERS.filter((l) => l.id === hover && TARGETS[l.id]).map((l) => (
+                  <motion.span
+                    key={`tip-${l.id}`}
+                    className="tip"
+                    style={{ left: `${l.left + l.width / 2}%`, top: `${l.top}%` }}
+                    initial={reduce ? { opacity: 1 } : { opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, y: 4 }}
+                    transition={{ duration: reduce ? 0 : 0.18, ease: "easeOut" }}
+                  >
+                    {TARGETS[l.id].label}
+                  </motion.span>
+                ))}
+              </AnimatePresence>
             </div>
           </div>
-          <p className="hint">
-            click anything on the desk
-            {HAS_GENERATED_DESK && (
-              <>
-                {" · "}
-                <button className="make-link" onClick={openFrom("making")}>
-                  how this desk was made →
-                </button>
-              </>
-            )}
-          </p>
+
+          {debug && <p className="ui-debug">{ui}</p>}
 
           <nav className="dock" aria-label="Sections">
-            {SECTIONS.filter((s) => s.inDock !== false && !s.hidden).map((s) => (
+            {dock.map((s) => (
               <button
                 key={s.id}
                 className={open === s.id ? "on" : ""}
