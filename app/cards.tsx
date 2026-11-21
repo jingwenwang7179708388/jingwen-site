@@ -59,8 +59,8 @@ export function SkillCards({ drop = false }: { drop?: boolean }) {
           animate={{ opacity: 1, y: 0, rotate: SKILL_TILTS[i] }}
           transition={
             fall
-              ? { delay: 0.32 + i * 0.08, type: "spring", stiffness: 260, damping: 22 }
-              : { delay: drop ? 0.25 : 0, duration: 0.25 }
+              ? { delay: 0.62 + i * 0.07, type: "spring", stiffness: 260, damping: 24 }
+              : { delay: drop ? 0.5 : 0, duration: 0.25 }
           }
         >
           <span className="skill-no">{g.no}</span>
@@ -117,7 +117,7 @@ export function ExperienceCards({ drop = false }: { drop?: boolean }) {
           className="id-card"
           initial={drop ? (reduce ? { opacity: 0 } : { opacity: 0, y: 24 }) : false}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: drop ? 0.3 + i * 0.08 : 0, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ delay: drop ? 0.6 + i * 0.07 : 0, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         >
           <span className="id-band" aria-hidden="true">
             <i />

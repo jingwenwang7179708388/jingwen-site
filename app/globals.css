@@ -104,50 +104,38 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   --cream: #f8f5ef; /* 面板底色 */
   --cream-2: #f1ece3; /* 面板里的卡片 */
 }
-.dim {
-  position: fixed; inset: 0; z-index: 10;
-  background: rgba(30, 26, 22, 0.2); /* 虚化本身加在 .stage 上（filter: blur），这里只负责变暗 */
-}
-.hero {
-  position: fixed; z-index: 12; pointer-events: none;
-  filter: drop-shadow(0 22px 34px rgba(40, 30, 20, 0.22));
-}
+.dim { position: fixed; inset: 0; z-index: 10; background: rgba(30, 26, 22, 0.2); }
+/* 虚化：预先模糊好的整张桌面，盖在清晰的场景上（desk3d/blur.mjs） */
+.scene-blur { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 6; pointer-events: none; user-select: none; }
+/* 推进的物件：在虚化背景之上、深色层之下 */
+.hero { position: fixed; z-index: 9; pointer-events: none; }
 .hero img { user-select: none; }
-.hero-hi { transition: opacity 0.2s; }
-/* 放大的白纸上：简历第一页 */
-.sheet {
-  position: absolute; translate: -50% -50%;
-  display: grid; place-items: center; overflow: hidden;
-  background: #f4f3f1; border-radius: 1.5%;
-}
-.sheet:has(img) { background: #fff;
-}
-.sheet img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.sheet-soon {
-  font-family: var(--font-display), sans-serif; font-weight: 600; font-size: clamp(14px, 1.6vw, 22px);
-  color: var(--mute); letter-spacing: 0.01em; text-align: center; padding: 0 8%;
-}
+.hero-sharp { position: absolute; inset: 0; }
+.hero-blur { position: absolute; max-width: none; }
 
+/* 居中的面板 */
+.panel-wrap { position: fixed; inset: 0; z-index: 11; display: grid; place-items: center; padding: 24px; pointer-events: none; }
 .panel {
-  position: fixed; z-index: 11; top: 24px; bottom: 24px; right: 24px;
-  width: calc(55vw - 24px);
+  pointer-events: auto;
+  width: min(880px, 100%); max-height: 82vh;
   display: flex; flex-direction: column;
   background: var(--cream); color: var(--ink);
   border: 1px solid var(--line); border-radius: 22px;
   box-shadow: 0 1px 2px rgba(43, 43, 43, 0.04), 0 30px 70px rgba(30, 24, 18, 0.18);
   overflow: hidden;
 }
-/* skills：卡片面板更宽，笔记本缩到左上角 */
-.panel.p-skills { width: auto; left: max(22vw, 200px); }
-.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 26px 6px 32px; }
-.panel-title { font-family: var(--font-display), sans-serif; font-weight: 600; font-size: 30px; letter-spacing: 0.01em; line-height: 1.05; }
+.panel.wide { width: min(1180px, 100%); }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px 4px 28px; }
+.panel-path {
+  font: 500 12.5px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.02em; color: var(--mute);
+  padding: 6px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.65); border: 1px solid var(--line);
+}
 .panel-x {
-  width: 38px; height: 38px; flex: none; border-radius: 50%;
-  display: grid; place-items: center; font-size: 22px; line-height: 1; color: var(--mute);
-  border: 1px solid var(--line); background: rgba(255, 255, 255, 0.6);
+  font: 500 12px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.02em; color: var(--mute);
+  padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.65);
 }
 .panel-x:hover { color: var(--ink); background: #fff; }
-.panel-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 32px 32px; }
+.panel-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 28px 28px; }
 
 /* 面板里的卡片：奶白、细边框、圆角、柔和投影 */
 .panel .proj, .panel .exps li, .panel .pipe, .panel .nums div {
@@ -157,13 +145,26 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .panel .proj h3, .panel .exps h3 { font-stretch: 100%; font-weight: 600; text-transform: none; font-size: 20px; letter-spacing: 0.01em; }
 .panel .pipe code { background: rgba(255, 255, 255, 0.7); }
 
-/* resume：右侧小卡片 */
+/* resume：左边一张纸（约 60%），右边小卡片 */
+.resume { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 32px; align-items: start; }
+.resume-paper {
+  justify-self: center; position: relative; overflow: hidden;
+  aspect-ratio: var(--paper-ar, 8.5 / 11); width: 100%; max-height: calc(82vh - 130px); max-width: calc((82vh - 130px) * 8.5 / 11);
+  display: grid; place-items: center;
+  background: #fff; border-radius: 4px; border: 1px solid rgba(43, 43, 43, 0.06);
+  box-shadow: 0 1px 2px rgba(43, 43, 43, 0.06), 0 14px 32px rgba(43, 43, 43, 0.12);
+}
+.resume-paper img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.resume-soon { font-family: var(--font-display), sans-serif; font-weight: 600; font-size: 22px; letter-spacing: 0.01em; color: var(--mute); text-align: center; padding: 0 10%; }
 .resume-card {
-  display: grid; gap: 16px; max-width: 360px; padding: 22px 24px;
+  display: grid; gap: 12px; padding: 22px 24px; position: sticky; top: 0;
   background: var(--cream-2); border: 1px solid var(--line); border-radius: 16px;
   box-shadow: 0 10px 24px rgba(43, 43, 43, 0.06);
 }
-.resume-title { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: var(--mute); }
+.resume-card .btn { justify-self: stretch; justify-content: center; }
+.btn:disabled { background: #e2ddd4; color: #9a978f; border-color: transparent; cursor: not-allowed; }
+.btn.ghost:disabled { background: transparent; color: #9a978f; border: 1.5px solid #d6d1c8; }
+.resume-title { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: var(--mute); margin-bottom: 4px; }
 
 /* about：左边大图，右边文字 */
 .about { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr); gap: 28px; align-items: start; }
@@ -299,8 +300,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   .pipe li span, .pipe li code { grid-column: 2; }
   .pipe code { justify-self: start; white-space: normal; }
   /* 手机：面板铺满，不做物件飞出 */
-  .panel, .panel.p-skills { inset: 12px; width: auto; }
-  .panel-head { padding: 16px 16px 4px 20px; }
-  .panel-body { padding: 14px 20px 24px; }
+  .panel-wrap { padding: 12px; }
+  .panel, .panel.wide { width: 100%; max-height: 92vh; }
+  .panel-head { padding: 14px 14px 4px 18px; }
+  .panel-body { padding: 14px 18px 22px; }
+  .resume { grid-template-columns: 1fr; }
   .about { grid-template-columns: 1fr; }
 }

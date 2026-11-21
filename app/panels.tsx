@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { motion, useReducedMotion } from "motion/react";
 import { ABOUT_PHOTO } from "./assets";
 import { ExperienceCards, SkillCards } from "./cards";
 import { LINKS, type Section } from "./content";
@@ -16,7 +15,7 @@ export function PanelBody({ section, resume }: { section: Section; resume: Resum
     case "experience":
       return <ExperienceCards drop />;
     case "resume":
-      return <ResumeCard resume={resume} />;
+      return <ResumeView resume={resume} />;
     case "about":
       return (
         <div className="about">
@@ -63,20 +62,47 @@ function AboutPhoto() {
   );
 }
 
-function ResumeCard({ resume }: { resume: Resume }) {
+// resume：左边约 60% 是简历第一页（像一张纸放在面板里），右边一张小卡片和两个按钮。
+// resume.pdf 还没有时：纸上写 "Resume coming soon"，按钮变灰不可点。
+function ResumeView({ resume }: { resume: Resume }) {
+  const ready = resume.status === "ready";
+  const img = ready ? resume : null;
   return (
-    <div className="resume-card">
-      <p className="resume-title">resume · 1 page · pdf</p>
-      {resume.status === "ready" && (
-        <div className="row">
-          <a className="btn" href={LINKS.resume} download>
-            Download resume
-          </a>
-          <a className="btn ghost" href={LINKS.resume} target="_blank" rel="noreferrer">
-            Open in new tab
-          </a>
-        </div>
-      )}
+    <div className="resume">
+      <div
+        className="resume-paper"
+        style={img?.w && img.h ? ({ "--paper-ar": `${img.w} / ${img.h}` } as React.CSSProperties) : undefined}
+      >
+        {img?.img ? (
+          // blob 地址，不经过 next/image
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={img.img} alt="Resume, page 1" />
+        ) : resume.status === "missing" ? (
+          <span className="resume-soon">Resume coming soon</span>
+        ) : null}
+      </div>
+      <aside className="resume-card">
+        <p className="resume-title">resume · 1 page · pdf</p>
+        {ready ? (
+          <>
+            <a className="btn" href={LINKS.resume} download>
+              Download resume ↓
+            </a>
+            <a className="btn ghost" href={LINKS.resume} target="_blank" rel="noreferrer">
+              Open in a new tab ↗
+            </a>
+          </>
+        ) : (
+          <>
+            <button className="btn" disabled>
+              Download resume ↓
+            </button>
+            <button className="btn ghost" disabled>
+              Open in a new tab ↗
+            </button>
+          </>
+        )}
+      </aside>
     </div>
   );
 }
@@ -104,27 +130,5 @@ function PhoneScreen() {
         ))}
       </div>
     </div>
-  );
-}
-
-// 放大后的白纸上：简历第一页，或者 "Resume coming soon"
-export function PaperSheet({ resume, style }: { resume: Resume; style: React.CSSProperties }) {
-  const reduce = useReducedMotion();
-  return (
-    <motion.div
-      className="sheet"
-      style={style}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1, transition: { delay: reduce ? 0 : 0.32, duration: 0.25 } }}
-      exit={{ opacity: 0, transition: { duration: 0.15 } }}
-    >
-      {resume.status === "ready" && resume.img ? (
-        // blob 地址，不经过 next/image
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={resume.img} alt="Resume, page 1" />
-      ) : resume.status === "missing" ? (
-        <span className="sheet-soon">Resume coming soon</span>
-      ) : null}
-    </motion.div>
   );
 }

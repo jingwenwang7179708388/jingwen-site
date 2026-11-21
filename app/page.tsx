@@ -1,13 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion, type Transition } from "motion/react";
 import { SECTIONS, type Section, type SectionId } from "./content";
 import { HAS_GENERATED_DESK } from "./assets";
-import { PanelBody, PaperSheet } from "./panels";
+import { PanelBody } from "./panels";
 import { useResume } from "./resume";
 import desk from "./desk-hotspots.json";
+import blur from "./desk-blur.json"; // 虚化用的小图，由 desk3d/blur.mjs 生成
 
 // ====== 书桌：背景图 + 每个物件单独一层 ======
 // 都由 desk3d/scene.py 渲染并写进 app/desk-hotspots.json（数字是占图片宽高的百分比）：
@@ -117,29 +118,48 @@ function DeskLayer({ layer, active, wiggle, away, onWiggleEnd }: {
 }
 
 
-// ====== 点开物件：物件放大飞到左侧并摆正，背景虚化，右侧滑出面板 ======
-// 时间线（毫秒）：0–400 物件飞出 + 背景虚化变暗；250 起面板从右侧滑入。关闭时倒放。
-// 减弱动态：物件直接出现在终点、面板不滑动，都只做淡入淡出。
+// ====== 点开物件：镜头推进 → 虚化 → 面板弹出 ======
+// 打开（约 0.9 秒，三步有重叠）：
+//   0–450ms   被点的物件放大、移到画面中心并摆正（占窗口高度约 80%）
+//   300–700ms 整个场景（包括放大的物件）虚化，叠 20% 深色
+//   500–900ms 面板从下方 40px 升到正中央并淡入
+// 关闭（约 0.6 秒）倒放：面板下移淡出 → 虚化消失 → 物件飞回原位。
+// 虚化用预先模糊好的小图淡入替换（desk3d/blur.mjs），只动 opacity，不用实时 CSS blur。
+// 减弱动态：不推进，只做虚化和面板的淡入淡出。
 const SECTION_OBJECT = Object.fromEntries(
   Object.entries(TARGETS).map(([obj, t]) => [t.section, obj]),
 ) as Partial<Record<SectionId, string>>;
-const EASE = [0.22, 1, 0.36, 1] as const;
-const FLY_S = 0.4;
-const PANEL_DELAY = 0.25;
+// 网址里的 #：和栏目标题一致（#resume、#photo-to-short …）
+const hashOf = (id: SectionId) => SECTIONS.find((s) => s.id === id)?.title.replace(".pdf", "") ?? id;
+const sectionOfHash = (hash: string) =>
+  DOCK_ORDER.find((id) => hashOf(id) === decodeURIComponent(hash.replace(/^#/, "")));
+
+const ZOOM_H = 0.8; // 推进后物件占窗口高度（desk3d/blur.mjs 用同一个数换算模糊半径）
+const ZOOM_W = 0.9;
+const EASE_OUT = [0.16, 1, 0.3, 1] as const;
+const T = {
+  zoom: { duration: 0.45, ease: EASE_OUT },
+  blurIn: { delay: 0.3, duration: 0.4, ease: "easeOut" },
+  panelIn: { delay: 0.5, type: "spring", visualDuration: 0.4, bounce: 0.08 },
+  panelOut: { duration: 0.2, ease: "easeIn" },
+  blurOut: { delay: 0.1, duration: 0.25, ease: "easeIn" },
+  zoomOut: { delay: 0.25, duration: 0.35, ease: [0.4, 0, 0.2, 1] },
+  // 减弱动态
+  fadeIn: { duration: 0.3 },
+  fadeOut: { duration: 0.2 },
+} satisfies Record<string, Transition>;
+const OPEN_MS = 900;
+// 只在事件里调用（判断动画是否还在进行）
+function clock() {
+  return performance.now();
+}
+const CLOSE_MS = 600;
 
 type Pose = { x: number; y: number; scale: number; rotate: number };
-type Flight = {
-  layer: Layer;
-  hotspot: Hotspot;
-  rect: Box; // 物件图层在屏幕上的原位置（px）
-  to: Pose | { [K in keyof Pose]: number[] }; // 终点；skills 是关键帧（先放大，再缩到左上角）
-  end: Pose; // 最终停下的样子（减弱动态时直接用这个）
-  scale: number; // 最大放大倍数（决定高清图的尺寸）
-};
-
+type Flight = { layer: Layer; rect: Box; to: Pose; scale: number };
 const HOME: Pose = { x: 0, y: 0, scale: 1, rotate: 0 };
 
-function planFlight(scene: DOMRect, layerId: string, section: SectionId): Flight | null {
+function planFlight(scene: DOMRect, layerId: string): Flight | null {
   const layer = LAYERS.find((l) => l.id === layerId);
   const hotspot = HOTSPOTS.find((h) => h.id === layerId);
   if (!layer || !hotspot) return null;
@@ -149,87 +169,65 @@ function planFlight(scene: DOMRect, layerId: string, section: SectionId): Flight
     width: (layer.width / 100) * scene.width,
     height: (layer.height / 100) * scene.height,
   };
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
   // 摆正后的物件大小 = 点击框（未旋转的物件外框）
   const ow = (hotspot.width / 100) * scene.width;
   const oh = (hotspot.height / 100) * scene.height;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const fit = (bw: number, bh: number, max: number) => Math.min(max, bw / ow, bh / oh);
-  const rotate = -(hotspot.rotate ?? 0);
-
-  if (section === "skills") {
-    // 笔记本：先在左侧放大，再缩到左上角，给更宽的卡片面板让位
-    const big = fit(vw * 0.4, vh * 0.72, 1.8);
-    const small = fit(Math.max(vw * 0.22 - 56, 110), vh * 0.32, 1);
-    const end = {
-      x: 28 + (ow * small) / 2 - cx,
-      y: 28 + (oh * small) / 2 - cy,
-      scale: small,
-      rotate,
-    };
-    return {
-      layer, hotspot, rect, end, scale: big,
-      to: {
-        x: [0, vw * 0.24 - cx, end.x],
-        y: [0, vh * 0.5 - cy, end.y],
-        scale: [1, big, small],
-        rotate: [0, rotate, rotate],
-      },
-    };
-  }
-  // 其他物件：移到左侧约三分之一处，放大 2 倍以内（放不下就按左侧空间缩小）
-  const s = fit(vw * 0.45 - 72, vh * 0.76, 2);
-  const end = { x: vw * 0.225 - cx, y: vh * 0.5 - cy, scale: s, rotate };
-  return { layer, hotspot, rect, end, to: end, scale: s };
+  const scale = Math.min((ZOOM_H * vh) / oh, (ZOOM_W * vw) / ow);
+  const to = {
+    x: vw / 2 - (rect.left + rect.width / 2),
+    y: vh / 2 - (rect.top + rect.height / 2),
+    scale,
+    rotate: -(hotspot.rotate ?? 0),
+  };
+  return { layer, rect, to, scale };
 }
 
-// 飞出的物件：先用和原位相同尺寸的图（已缓存，马上显示），高清图加载完再盖上去
-function Hero({ flight, resume }: { flight: Flight; resume: ReturnType<typeof useResume> }) {
-  const reduce = useReducedMotion();
+// 推进的物件：清晰图（先用和原位一样的那份，已缓存；高清图加载完盖上）→ 淡入替换成模糊图
+function Hero({ flight }: { flight: Flight }) {
   const [hi, setHi] = useState(false);
-  const { layer, hotspot: h, rect } = flight;
-  const keyframes = Array.isArray((flight.to as { x: unknown }).x);
+  const { layer, rect } = flight;
+  const b = (blur.layers as Record<string, { src: string; padX: number; padY: number }>)[layer.id];
   return (
     <motion.div
       className="hero"
       style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
-      initial={reduce ? { ...flight.end, opacity: 0 } : { ...HOME, opacity: 1 }}
-      animate={reduce ? { ...flight.end, opacity: 1 } : { ...flight.to, opacity: 1 }}
-      exit={
-        reduce
-          ? { opacity: 0, transition: { duration: 0.2 } }
-          : { ...HOME, transition: { delay: 0.15, duration: FLY_S, ease: EASE } }
-      }
-      transition={
-        reduce
-          ? { duration: 0.2 }
-          : keyframes
-            ? { duration: 0.85, ease: EASE, times: [0, 0.45, 1] }
-            : { duration: FLY_S, ease: EASE }
-      }
+      initial={HOME}
+      animate={{ ...flight.to, transition: T.zoom }}
+      exit={{ ...HOME, transition: T.zoomOut }}
     >
-      <Image src={layer.src} alt="" fill sizes={layerSizes(layer)} />
-      <Image
-        src={layer.src}
-        alt=""
-        fill
-        sizes={`${Math.round(rect.width * flight.scale)}px`}
-        className="hero-hi"
-        style={{ opacity: hi ? 1 : 0 }}
-        onLoad={() => setHi(true)}
-      />
-      {layer.id === "paper" && (
-        <PaperSheet
-          resume={resume}
+      <motion.div
+        className="hero-sharp"
+        // 模糊图先盖上来，清晰图再在下面撤掉（同时半透明会让物件看起来透明）
+        initial={{ opacity: 1 }}
+        animate={{ opacity: 0, transition: { delay: 0.58, duration: 0.12 } }}
+        exit={{ opacity: 1, transition: { duration: 0.08 } }}
+      >
+        <Image src={layer.src} alt="" fill sizes={layerSizes(layer)} />
+        <Image
+          src={layer.src}
+          alt=""
+          fill
+          sizes={`${Math.round(rect.width * Math.min(flight.scale, 3))}px`}
+          style={{ opacity: hi ? 1 : 0 }}
+          onLoad={() => setHi(true)}
+        />
+      </motion.div>
+      {b && (
+        <motion.img
+          className="hero-blur"
+          src={b.src}
+          alt=""
           style={{
-            left: `${((h.left + h.width / 2 - layer.left) / layer.width) * 100}%`,
-            top: `${((h.top + h.height / 2 - layer.top) / layer.height) * 100}%`,
-            width: `${(h.width / layer.width) * 100 * 0.9}%`,
-            height: `${(h.height / layer.height) * 100 * 0.92}%`,
-            rotate: `${h.rotate ?? 0}deg`,
+            left: `${-b.padX * 100}%`,
+            top: `${-b.padY * 100}%`,
+            width: `${(1 + 2 * b.padX) * 100}%`,
+            height: `${(1 + 2 * b.padY) * 100}%`,
           }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { delay: 0.3, duration: 0.28, ease: "easeOut" } }}
+          exit={{ opacity: 0, transition: T.blurOut }}
         />
       )}
     </motion.div>
@@ -241,6 +239,7 @@ const FOCUSABLE = 'a[href], button:not([disabled]), iframe, input, select, texta
 export default function Home() {
   const [open, setOpen] = useState<SectionId | null>(null);
   const [flight, setFlight] = useState<Flight | null>(null);
+  const [blurKey, setBlurKey] = useState("all"); // 用哪张模糊背景（推进的物件不在里面）
   const [hover, setHover] = useState<string | null>(null);
   const [wiggle, setWiggle] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -251,15 +250,105 @@ export default function Home() {
   const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
+  const busyUntil = useRef(0); // 动画进行中忽略重复点击
+  const openRef = useRef<SectionId | null>(null);
   const resume = useResume(open === "resume");
 
-  // 手机屏幕默认用阅读模式；网址带 ?debug=1 时显示点击区域
+  const busy = () => clock() < busyUntil.current;
+  const hold = (ms: number) => {
+    busyUntil.current = clock() + ms;
+  };
+
+  // 找到某个栏目对应的入口（物件的点击区域，没有就用底部导航按钮），关闭后焦点回到这里
+  const entryFor = (id: SectionId): HTMLElement | null => {
+    const obj = SECTION_OBJECT[id];
+    return (
+      (obj && document.querySelector<HTMLElement>(`.hot[data-obj="${obj}"]`)) ||
+      document.querySelector<HTMLElement>(`.dock button[data-sec="${id}"]`)
+    );
+  };
+
+  const show = (id: SectionId, from: HTMLElement | null) => {
+    returnTo.current = from;
+    setHover(null); // 面板打开时暂停悬停效果
+    const obj = SECTION_OBJECT[id];
+    const scene = sceneRef.current?.getBoundingClientRect();
+    const narrow = window.matchMedia("(max-width: 760px)").matches;
+    const f = obj && scene && !narrow && !reduce ? planFlight(scene, obj) : null;
+    setFlight(f);
+    setBlurKey(f ? f.layer.id : "all");
+    openRef.current = id;
+    setOpen(id);
+    hold(reduce ? 300 : OPEN_MS);
+  };
+  const hide = () => {
+    if (!openRef.current) return;
+    openRef.current = null;
+    setOpen(null);
+    hold(reduce ? 200 : CLOSE_MS);
+  };
+
+  // 点物件 / 导航：打开，网址加上 #栏目
+  const openSection = (id: SectionId, from: HTMLElement) => {
+    if (busy() || openRef.current) return;
+    window.history.pushState({ panel: id }, "", `#${hashOf(id)}`);
+    show(id, from);
+  };
+  // 点空白处 / Esc / 关闭按钮：自己加的 # 用"返回"退掉（交给 popstate 关），直接带 # 进来的就把 # 去掉
+  const requestClose = () => {
+    if (busy() || !openRef.current) return;
+    if (window.history.state?.panel) window.history.back();
+    else {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      hide();
+    }
+  };
+
+  // 手机屏幕默认用阅读模式；网址带 ?debug=1 时显示点击区域；带 #栏目 时自动打开
   useEffect(() => {
     const id = requestAnimationFrame(() => {
-      if (window.matchMedia("(max-width: 760px)").matches) setReading(true);
+      const narrow = window.matchMedia("(max-width: 760px)").matches;
+      if (narrow) setReading(true);
       if (new URLSearchParams(window.location.search).get("debug") === "1") setDebug(true);
+      const sec = sectionOfHash(window.location.hash);
+      if (!sec) return;
+      if (narrow) {
+        setTimeout(() => document.getElementById(`sec-${hashOf(sec)}`)?.scrollIntoView(), 50);
+      } else {
+        setTimeout(() => show(sec, entryFor(sec)), 350);
+      }
     });
     return () => cancelAnimationFrame(id);
+    // 只在加载时跑一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 浏览器返回 / 前进：按网址里的 # 关闭或打开面板（动画中就等它播完）。
+  // 监听器只挂一次：Next 的路由在 popstate 里会同步重渲染，每次重挂的监听器会错过这次事件
+  const onPop = useEffectEvent(() => {
+    const sec = sectionOfHash(window.location.hash);
+    if (!sec) hide();
+    else if (!openRef.current) show(sec, entryFor(sec));
+  });
+  useEffect(() => {
+    const handler = () => {
+      const wait = busyUntil.current - clock();
+      if (wait > 0) setTimeout(onPop, wait + 20);
+      else onPop();
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
+
+  // 预先加载模糊图（很小，一共约 190 KB），点开时马上能用
+  useEffect(() => {
+    const t = setTimeout(() => {
+      [...Object.values(blur.bg), ...Object.values(blur.layers).map((l) => l.src)].forEach((src) => {
+        const img = new window.Image();
+        img.src = src;
+      });
+    }, 1500);
+    return () => clearTimeout(t);
   }, []);
 
   // ?debug=1：量出标题、按钮、导航的实际尺寸（desk3d/scene.py 布局检查里的 TITLE / MODE_BTN / DOCK）
@@ -280,10 +369,11 @@ export default function Home() {
     };
   }, [debug]);
 
-  // 按 Esc 关闭面板
+  // Esc 关闭
+  const onEsc = useEffectEvent(() => requestClose());
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(null);
+      if (e.key === "Escape") onEsc();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -293,17 +383,6 @@ export default function Home() {
   useEffect(() => {
     if (open) closeRef.current?.focus({ preventScroll: true });
   }, [open]);
-
-  const openSection = (id: SectionId, from: HTMLElement) => {
-    returnTo.current = from;
-    setHover(null); // 面板打开时暂停悬停效果
-    const obj = SECTION_OBJECT[id];
-    const scene = sceneRef.current?.getBoundingClientRect();
-    const narrow = window.matchMedia("(max-width: 760px)").matches;
-    setFlight(obj && scene && !narrow ? planFlight(scene, obj, id) : null);
-    setOpen(id);
-  };
-  const close = () => setOpen(null);
 
   // Tab 只在面板里循环
   const trapTab = (e: ReactKeyboardEvent) => {
@@ -330,7 +409,8 @@ export default function Home() {
   const hoverOn = (id: string) => (on: boolean) =>
     setHover((h) => (on ? id : h === id ? null : h));
   const isOpen = !!current && !reading;
-  // 标题、导航：面板打开时淡出，关闭后淡回
+  const wide = open === "skills" || open === "resume";
+  // 标题、reading mode 按钮、导航：面板打开时淡出，关闭后淡回
   const chrome = {
     animate: { opacity: isOpen ? 0 : 1 },
     transition: { duration: 0.25, delay: isOpen ? 0 : 0.35 },
@@ -352,7 +432,7 @@ export default function Home() {
       {reading ? (
         <div className="reading">
           {reader.map((s) => (
-            <section key={s.id} className="read-sec">
+            <section key={s.id} id={`sec-${hashOf(s.id)}`} className="read-sec">
               <h2>{s.title}</h2>
               {s.body}
             </section>
@@ -360,16 +440,7 @@ export default function Home() {
         </div>
       ) : (
         <>
-          <motion.div
-            className="stage"
-            inert={isOpen}
-            initial={false}
-            animate={
-              isOpen
-                ? { filter: reduce ? "blur(0px)" : "blur(12px)", transition: { duration: FLY_S, ease: "easeOut" } }
-                : { filter: "blur(0px)", transitionEnd: { filter: "none" }, transition: { delay: 0.15, duration: FLY_S } }
-            }
-          >
+          <div className="stage" inert={isOpen}>
             <div className="scene" ref={sceneRef}>
               <Image
                 className="scene-img"
@@ -409,6 +480,7 @@ export default function Home() {
                 return (
                   <button
                     key={h.id}
+                    data-obj={h.id}
                     className={`hot${h.round ? " round" : ""}${debug ? " debug" : ""}`}
                     style={{ ...pos(h), "--r": `${r}deg` } as CSSProperties}
                     onClick={(e) => openSection(t.section, e.currentTarget)}
@@ -441,14 +513,34 @@ export default function Home() {
                   </motion.span>
                 ))}
               </AnimatePresence>
+
+              {/* 虚化：预先模糊好的整张桌面（不含推进的那个物件），淡入盖住清晰的场景 */}
+              <AnimatePresence>
+                {isOpen && (
+                  <motion.img
+                    key="scene-blur"
+                    className="scene-blur"
+                    src={(blur.bg as Record<string, string>)[blurKey] ?? blur.bg.all}
+                    alt=""
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1, transition: reduce ? T.fadeIn : T.blurIn }}
+                    exit={{ opacity: 0, transition: reduce ? T.fadeOut : T.blurOut }}
+                  />
+                )}
+              </AnimatePresence>
             </div>
-          </motion.div>
+          </div>
 
           {debug && <p className="ui-debug">{ui}</p>}
 
           <motion.nav className="dock" aria-label="Sections" inert={isOpen} initial={false} {...chrome}>
             {dock.map((s) => (
-              <button key={s.id} onClick={(e) => openSection(s.id, e.currentTarget)} aria-haspopup="dialog">
+              <button
+                key={s.id}
+                data-sec={s.id}
+                onClick={(e) => openSection(s.id, e.currentTarget)}
+                aria-haspopup="dialog"
+              >
                 {s.title.replace(".pdf", "")}
               </button>
             ))}
@@ -456,62 +548,66 @@ export default function Home() {
         </>
       )}
 
-      {/* 背景虚化 + 变暗；点空白处关闭 */}
+      {/* 推进的物件；飞回原位后原位那份才重新显示 */}
+      <AnimatePresence onExitComplete={() => setFlight(null)}>
+        {isOpen && flight && <Hero key={flight.layer.id} flight={flight} />}
+      </AnimatePresence>
+
+      {/* 20% 深色；点空白处关闭 */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
             key="dim"
             className="dim"
-            onClick={close}
+            onClick={requestClose}
+            onMouseDown={(e) => e.preventDefault()} // 动画中被忽略的点击也不要把焦点从面板里拿走
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1, transition: { duration: reduce ? 0.2 : FLY_S, ease: "easeOut" } }}
-            exit={{ opacity: 0, transition: { delay: reduce ? 0 : 0.15, duration: reduce ? 0.2 : FLY_S } }}
+            animate={{ opacity: 1, transition: reduce ? T.fadeIn : T.blurIn }}
+            exit={{ opacity: 0, transition: reduce ? T.fadeOut : T.blurOut }}
           />
         )}
       </AnimatePresence>
 
-      {/* 放大的物件；飞回原位后才让原位那份重新显示 */}
-      <AnimatePresence onExitComplete={() => setFlight(null)}>
-        {isOpen && flight && <Hero key={flight.layer.id} flight={flight} resume={resume} />}
-      </AnimatePresence>
-
-      {/* 右侧面板 */}
-      <AnimatePresence onExitComplete={() => returnTo.current?.focus({ preventScroll: true })}>
-        {isOpen && current && (
-          <motion.section
-            key={current.id}
-            ref={panelRef}
-            className={`panel p-${current.id}`}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="panel-title"
-            onKeyDown={trapTab}
-            initial={reduce ? { opacity: 0 } : { opacity: 0, x: 64 }}
-            animate={{
-              opacity: 1,
-              x: 0,
-              transition: reduce ? { duration: 0.2 } : { delay: PANEL_DELAY, duration: 0.38, ease: EASE },
-            }}
-            exit={
-              reduce
-                ? { opacity: 0, transition: { duration: 0.15 } }
-                : { opacity: 0, x: 64, transition: { duration: 0.22, ease: "easeIn" } }
-            }
-          >
-            <header className="panel-head">
-              <h2 id="panel-title" className="panel-title">
-                {current.title}
-              </h2>
-              <button ref={closeRef} className="panel-x" onClick={close} aria-label={`Close ${current.title}`}>
-                ×
-              </button>
-            </header>
-            <div className="panel-body">
-              <PanelBody section={current} resume={resume} />
-            </div>
-          </motion.section>
-        )}
-      </AnimatePresence>
+      {/* 居中的面板 */}
+      <div className="panel-wrap">
+        <AnimatePresence onExitComplete={() => returnTo.current?.focus({ preventScroll: true })}>
+          {isOpen && current && (
+            <motion.section
+              key={current.id}
+              ref={panelRef}
+              className={`panel p-${current.id}${wide ? " wide" : ""}`}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="panel-title"
+              onKeyDown={trapTab}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 40 }}
+              animate={
+                reduce
+                  ? { opacity: 1, transition: { ...T.fadeIn, delay: 0.1 } }
+                  : { opacity: 1, y: 0, transition: { ...T.panelIn, opacity: { delay: 0.5, duration: 0.3 } } }
+              }
+              exit={reduce ? { opacity: 0, transition: T.fadeOut } : { opacity: 0, y: 40, transition: T.panelOut }}
+            >
+              <header className="panel-head">
+                <h2 id="panel-title" className="panel-path">
+                  ./{hashOf(current.id)}
+                </h2>
+                <button
+                  ref={closeRef}
+                  className="panel-x"
+                  onClick={requestClose}
+                  aria-label={`Close ${hashOf(current.id)}`}
+                >
+                  close · esc
+                </button>
+              </header>
+              <div className="panel-body">
+                <PanelBody section={current} resume={resume} />
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
+      </div>
     </main>
   );
 }
