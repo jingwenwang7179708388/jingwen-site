@@ -1,10 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion, type Transition } from "motion/react";
 import { SECTIONS, type Section, type SectionId } from "./content";
 import { HAS_GENERATED_DESK } from "./assets";
+import { PanelBody, PaperSheet } from "./panels";
+import { useResume } from "./resume";
 import desk from "./desk-hotspots.json";
 
 // ====== 书桌：背景图 + 每个物件单独一层 ======
@@ -69,10 +71,15 @@ const REST = { scale: 1, filter: NO_SHADOW, transitionEnd: { filter: "none" } };
 const LIFT = { scale: 1.03, filter: [NO_SHADOW, SHADOW] };
 const SPRING: Transition = { type: "spring", stiffness: 320, damping: 26 };
 
-function DeskLayer({ layer, active, wiggle, onWiggleEnd }: {
+// 图层图片的 sizes：和场景一起缩放（放大飞出的那份用同一个，直接命中缓存）
+const layerSizes = (l: Box) =>
+  `calc(${l.width / 100} * min(${Math.round(10000 / CORE.width)}vw, ${Math.round((ASPECT * 10000) / CORE.height)}vh))`;
+
+function DeskLayer({ layer, active, wiggle, away, onWiggleEnd }: {
   layer: Layer;
   active: boolean;
   wiggle: boolean;
+  away: boolean; // 正在放大飞出：原位这份先藏起来
   onWiggleEnd: () => void;
 }) {
   const reduce = useReducedMotion();
@@ -86,7 +93,13 @@ function DeskLayer({ layer, active, wiggle, onWiggleEnd }: {
   return (
     <motion.div
       className="layer"
-      style={{ ...pos(layer), zIndex: active ? 3 : 1, transformOrigin: "50% 100%", filter: "none" }}
+      style={{
+        ...pos(layer),
+        zIndex: active ? 3 : 1,
+        transformOrigin: "50% 100%",
+        filter: "none",
+        visibility: away ? "hidden" : undefined,
+      }}
       initial={false}
       animate={animate}
       transition={wiggle ? { duration: 0.55, ease: "easeInOut" } : SPRING}
@@ -96,24 +109,149 @@ function DeskLayer({ layer, active, wiggle, onWiggleEnd }: {
         src={layer.src}
         alt=""
         fill
-        sizes={`calc(${layer.width / 100} * min(${Math.round(10000 / CORE.width)}vw, ${Math.round((ASPECT * 10000) / CORE.height)}vh))`}
+        sizes={layerSizes(layer)}
         priority
       />
     </motion.div>
   );
 }
 
-type Origin = { x: number; y: number };
+
+// ====== 点开物件：物件放大飞到左侧并摆正，背景虚化，右侧滑出面板 ======
+// 时间线（毫秒）：0–400 物件飞出 + 背景虚化变暗；250 起面板从右侧滑入。关闭时倒放。
+// 减弱动态：物件直接出现在终点、面板不滑动，都只做淡入淡出。
+const SECTION_OBJECT = Object.fromEntries(
+  Object.entries(TARGETS).map(([obj, t]) => [t.section, obj]),
+) as Partial<Record<SectionId, string>>;
+const EASE = [0.22, 1, 0.36, 1] as const;
+const FLY_S = 0.4;
+const PANEL_DELAY = 0.25;
+
+type Pose = { x: number; y: number; scale: number; rotate: number };
+type Flight = {
+  layer: Layer;
+  hotspot: Hotspot;
+  rect: Box; // 物件图层在屏幕上的原位置（px）
+  to: Pose | { [K in keyof Pose]: number[] }; // 终点；skills 是关键帧（先放大，再缩到左上角）
+  end: Pose; // 最终停下的样子（减弱动态时直接用这个）
+  scale: number; // 最大放大倍数（决定高清图的尺寸）
+};
+
+const HOME: Pose = { x: 0, y: 0, scale: 1, rotate: 0 };
+
+function planFlight(scene: DOMRect, layerId: string, section: SectionId): Flight | null {
+  const layer = LAYERS.find((l) => l.id === layerId);
+  const hotspot = HOTSPOTS.find((h) => h.id === layerId);
+  if (!layer || !hotspot) return null;
+  const rect = {
+    left: scene.left + (layer.left / 100) * scene.width,
+    top: scene.top + (layer.top / 100) * scene.height,
+    width: (layer.width / 100) * scene.width,
+    height: (layer.height / 100) * scene.height,
+  };
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  // 摆正后的物件大小 = 点击框（未旋转的物件外框）
+  const ow = (hotspot.width / 100) * scene.width;
+  const oh = (hotspot.height / 100) * scene.height;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const fit = (bw: number, bh: number, max: number) => Math.min(max, bw / ow, bh / oh);
+  const rotate = -(hotspot.rotate ?? 0);
+
+  if (section === "skills") {
+    // 笔记本：先在左侧放大，再缩到左上角，给更宽的卡片面板让位
+    const big = fit(vw * 0.4, vh * 0.72, 1.8);
+    const small = fit(Math.max(vw * 0.22 - 56, 110), vh * 0.32, 1);
+    const end = {
+      x: 28 + (ow * small) / 2 - cx,
+      y: 28 + (oh * small) / 2 - cy,
+      scale: small,
+      rotate,
+    };
+    return {
+      layer, hotspot, rect, end, scale: big,
+      to: {
+        x: [0, vw * 0.24 - cx, end.x],
+        y: [0, vh * 0.5 - cy, end.y],
+        scale: [1, big, small],
+        rotate: [0, rotate, rotate],
+      },
+    };
+  }
+  // 其他物件：移到左侧约三分之一处，放大 2 倍以内（放不下就按左侧空间缩小）
+  const s = fit(vw * 0.45 - 72, vh * 0.76, 2);
+  const end = { x: vw * 0.225 - cx, y: vh * 0.5 - cy, scale: s, rotate };
+  return { layer, hotspot, rect, end, to: end, scale: s };
+}
+
+// 飞出的物件：先用和原位相同尺寸的图（已缓存，马上显示），高清图加载完再盖上去
+function Hero({ flight, resume }: { flight: Flight; resume: ReturnType<typeof useResume> }) {
+  const reduce = useReducedMotion();
+  const [hi, setHi] = useState(false);
+  const { layer, hotspot: h, rect } = flight;
+  const keyframes = Array.isArray((flight.to as { x: unknown }).x);
+  return (
+    <motion.div
+      className="hero"
+      style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+      initial={reduce ? { ...flight.end, opacity: 0 } : { ...HOME, opacity: 1 }}
+      animate={reduce ? { ...flight.end, opacity: 1 } : { ...flight.to, opacity: 1 }}
+      exit={
+        reduce
+          ? { opacity: 0, transition: { duration: 0.2 } }
+          : { ...HOME, transition: { delay: 0.15, duration: FLY_S, ease: EASE } }
+      }
+      transition={
+        reduce
+          ? { duration: 0.2 }
+          : keyframes
+            ? { duration: 0.85, ease: EASE, times: [0, 0.45, 1] }
+            : { duration: FLY_S, ease: EASE }
+      }
+    >
+      <Image src={layer.src} alt="" fill sizes={layerSizes(layer)} />
+      <Image
+        src={layer.src}
+        alt=""
+        fill
+        sizes={`${Math.round(rect.width * flight.scale)}px`}
+        className="hero-hi"
+        style={{ opacity: hi ? 1 : 0 }}
+        onLoad={() => setHi(true)}
+      />
+      {layer.id === "paper" && (
+        <PaperSheet
+          resume={resume}
+          style={{
+            left: `${((h.left + h.width / 2 - layer.left) / layer.width) * 100}%`,
+            top: `${((h.top + h.height / 2 - layer.top) / layer.height) * 100}%`,
+            width: `${(h.width / layer.width) * 100 * 0.9}%`,
+            height: `${(h.height / layer.height) * 100 * 0.92}%`,
+            rotate: `${h.rotate ?? 0}deg`,
+          }}
+        />
+      )}
+    </motion.div>
+  );
+}
+
+const FOCUSABLE = 'a[href], button:not([disabled]), iframe, input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 export default function Home() {
   const [open, setOpen] = useState<SectionId | null>(null);
-  const [origin, setOrigin] = useState<Origin>({ x: 0, y: 0 });
+  const [flight, setFlight] = useState<Flight | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [wiggle, setWiggle] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [debug, setDebug] = useState(false);
   const [ui, setUi] = useState("");
   const reduce = useReducedMotion();
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const returnTo = useRef<HTMLElement | null>(null);
+  const resume = useResume(open === "resume");
 
   // 手机屏幕默认用阅读模式；网址带 ?debug=1 时显示点击区域
   useEffect(() => {
@@ -142,7 +280,7 @@ export default function Home() {
     };
   }, [debug]);
 
-  // 按 Esc 关闭窗口
+  // 按 Esc 关闭面板
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(null);
@@ -151,14 +289,39 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 打开窗口：记下被点的东西在屏幕上的位置，窗口从那里放大出来
-  const openFrom = (id: SectionId) => (e: MouseEvent<HTMLElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    setOrigin({
-      x: r.left + r.width / 2 - window.innerWidth / 2,
-      y: r.top + r.height / 2 - window.innerHeight / 2,
-    });
+  // 面板打开：焦点移到面板里的关闭按钮
+  useEffect(() => {
+    if (open) closeRef.current?.focus({ preventScroll: true });
+  }, [open]);
+
+  const openSection = (id: SectionId, from: HTMLElement) => {
+    returnTo.current = from;
+    setHover(null); // 面板打开时暂停悬停效果
+    const obj = SECTION_OBJECT[id];
+    const scene = sceneRef.current?.getBoundingClientRect();
+    const narrow = window.matchMedia("(max-width: 760px)").matches;
+    setFlight(obj && scene && !narrow ? planFlight(scene, obj, id) : null);
     setOpen(id);
+  };
+  const close = () => setOpen(null);
+
+  // Tab 只在面板里循环
+  const trapTab = (e: ReactKeyboardEvent) => {
+    if (e.key !== "Tab" || !panelRef.current) return;
+    const items = [...panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+      (el) => el.getClientRects().length > 0,
+    );
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const inside = panelRef.current.contains(document.activeElement);
+    if (e.shiftKey && (document.activeElement === first || !inside)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+      e.preventDefault();
+      first.focus();
+    }
   };
 
   const current = SECTIONS.find((s) => s.id === open);
@@ -166,14 +329,16 @@ export default function Home() {
   const dock = byId(DOCK_ORDER);
   const hoverOn = (id: string) => (on: boolean) =>
     setHover((h) => (on ? id : h === id ? null : h));
-
-  const hidden = reduce
-    ? { opacity: 0 }
-    : { opacity: 0, scale: 0.12, x: origin.x, y: origin.y };
+  const isOpen = !!current && !reading;
+  // 标题、导航：面板打开时淡出，关闭后淡回
+  const chrome = {
+    animate: { opacity: isOpen ? 0 : 1 },
+    transition: { duration: 0.25, delay: isOpen ? 0 : 0.35 },
+  };
 
   return (
     <main className={`page${reading ? "" : " on-desk"}`} style={SCENE_VARS}>
-      <header className="top">
+      <motion.header className="top" inert={isOpen} initial={false} {...chrome}>
         <h1 className="name">
           Hello!
           <br />
@@ -182,7 +347,7 @@ export default function Home() {
         <button className="mode" onClick={() => setReading((r) => !r)}>
           {reading ? "desk mode" : "reading mode"}
         </button>
-      </header>
+      </motion.header>
 
       {reading ? (
         <div className="reading">
@@ -195,8 +360,17 @@ export default function Home() {
         </div>
       ) : (
         <>
-          <div className="stage">
-            <div className="scene">
+          <motion.div
+            className="stage"
+            inert={isOpen}
+            initial={false}
+            animate={
+              isOpen
+                ? { filter: reduce ? "blur(0px)" : "blur(12px)", transition: { duration: FLY_S, ease: "easeOut" } }
+                : { filter: "blur(0px)", transitionEnd: { filter: "none" }, transition: { delay: 0.15, duration: FLY_S } }
+            }
+          >
+            <div className="scene" ref={sceneRef}>
               <Image
                 className="scene-img"
                 src={SCENE.src}
@@ -212,6 +386,7 @@ export default function Home() {
                   layer={layer}
                   active={hover === layer.id}
                   wiggle={wiggle === layer.id}
+                  away={flight?.layer.id === layer.id}
                   onWiggleEnd={() => setWiggle(null)}
                 />
               ))}
@@ -222,7 +397,7 @@ export default function Home() {
                   key={`deco-${l.id}`}
                   className={`deco${debug ? " debug" : ""}`}
                   style={pos(l)}
-                  onMouseEnter={() => !reduce && setWiggle(l.id)}
+                  onMouseEnter={() => !reduce && !isOpen && setWiggle(l.id)}
                   aria-hidden="true"
                 />
               ))}
@@ -236,12 +411,14 @@ export default function Home() {
                     key={h.id}
                     className={`hot${h.round ? " round" : ""}${debug ? " debug" : ""}`}
                     style={{ ...pos(h), "--r": `${r}deg` } as CSSProperties}
-                    onClick={openFrom(t.section)}
+                    onClick={(e) => openSection(t.section, e.currentTarget)}
                     onMouseEnter={() => hoverOn(h.id)(true)}
                     onMouseLeave={() => hoverOn(h.id)(false)}
-                    onFocus={() => hoverOn(h.id)(true)}
+                    // 键盘聚焦时也抬起；关闭面板后焦点回来时（鼠标操作）不抬
+                    onFocus={(e) => e.currentTarget.matches(":focus-visible") && hoverOn(h.id)(true)}
                     onBlur={() => hoverOn(h.id)(false)}
                     aria-label={`Open ${t.label.replace("./", "")}`}
+                    aria-haspopup="dialog"
                   >
                     {debug && <span className="hot-id">{h.id}</span>}
                   </button>
@@ -250,7 +427,7 @@ export default function Home() {
 
               {/* 物件上方的小标签 */}
               <AnimatePresence>
-                {LAYERS.filter((l) => l.id === hover && TARGETS[l.id]).map((l) => (
+                {LAYERS.filter((l) => l.id === hover && TARGETS[l.id] && !isOpen).map((l) => (
                   <motion.span
                     key={`tip-${l.id}`}
                     className="tip"
@@ -265,61 +442,74 @@ export default function Home() {
                 ))}
               </AnimatePresence>
             </div>
-          </div>
+          </motion.div>
 
           {debug && <p className="ui-debug">{ui}</p>}
 
-          <nav className="dock" aria-label="Sections">
+          <motion.nav className="dock" aria-label="Sections" inert={isOpen} initial={false} {...chrome}>
             {dock.map((s) => (
-              <button
-                key={s.id}
-                className={open === s.id ? "on" : ""}
-                onClick={openFrom(s.id)}
-              >
+              <button key={s.id} onClick={(e) => openSection(s.id, e.currentTarget)} aria-haspopup="dialog">
                 {s.title.replace(".pdf", "")}
               </button>
             ))}
-          </nav>
+          </motion.nav>
         </>
       )}
 
+      {/* 背景虚化 + 变暗；点空白处关闭 */}
       <AnimatePresence>
-        {current && !reading && (
+        {isOpen && (
           <motion.div
-            key="overlay"
-            className="overlay"
-            onClick={() => setOpen(null)}
+            key="dim"
+            className="dim"
+            onClick={close}
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, pointerEvents: "none" }}
-            transition={{ duration: 0.2 }}
+            animate={{ opacity: 1, transition: { duration: reduce ? 0.2 : FLY_S, ease: "easeOut" } }}
+            exit={{ opacity: 0, transition: { delay: reduce ? 0 : 0.15, duration: reduce ? 0.2 : FLY_S } }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 放大的物件；飞回原位后才让原位那份重新显示 */}
+      <AnimatePresence onExitComplete={() => setFlight(null)}>
+        {isOpen && flight && <Hero key={flight.layer.id} flight={flight} resume={resume} />}
+      </AnimatePresence>
+
+      {/* 右侧面板 */}
+      <AnimatePresence onExitComplete={() => returnTo.current?.focus({ preventScroll: true })}>
+        {isOpen && current && (
+          <motion.section
+            key={current.id}
+            ref={panelRef}
+            className={`panel p-${current.id}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="panel-title"
+            onKeyDown={trapTab}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, x: 64 }}
+            animate={{
+              opacity: 1,
+              x: 0,
+              transition: reduce ? { duration: 0.2 } : { delay: PANEL_DELAY, duration: 0.38, ease: EASE },
+            }}
+            exit={
+              reduce
+                ? { opacity: 0, transition: { duration: 0.15 } }
+                : { opacity: 0, x: 64, transition: { duration: 0.22, ease: "easeIn" } }
+            }
           >
-            <motion.div
-              key={current.id}
-              className={`win${current.wide ? " wide" : ""}`}
-              role="dialog"
-              aria-modal="true"
-              aria-label={current.title}
-              onClick={(e) => e.stopPropagation()}
-              initial={hidden}
-              animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-              exit={hidden}
-              transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.9 }}
-            >
-              <div className="win-bar">
-                <span className="dots">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span className="win-title">~/jingwen/{current.title}</span>
-                <button className="x" onClick={() => setOpen(null)} aria-label="Close" autoFocus>
-                  ×
-                </button>
-              </div>
-              <div className="win-body">{current.body}</div>
-            </motion.div>
-          </motion.div>
+            <header className="panel-head">
+              <h2 id="panel-title" className="panel-title">
+                {current.title}
+              </h2>
+              <button ref={closeRef} className="panel-x" onClick={close} aria-label={`Close ${current.title}`}>
+                ×
+              </button>
+            </header>
+            <div className="panel-body">
+              <PanelBody section={current} resume={resume} />
+            </div>
+          </motion.section>
         )}
       </AnimatePresence>
     </main>

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { DEMO, MAKING, PHOTOS } from "./assets";
+import { ExperienceCards, SkillCards } from "./cards";
 
 // ====== 你的链接：改这里 ======
 export const LINKS = {
@@ -182,26 +183,15 @@ export const SECTIONS: Section[] = [
       </div>
     ),
   },
-  // ====== 新栏目：先放占位内容，之后再填 ======
   {
     id: "experience",
     title: "experience",
-    body: (
-      <div className="stack">
-        <p className="lead">Roles, dates and what I shipped in each.</p>
-        <p className="note">Coming soon.</p>
-      </div>
-    ),
+    body: <ExperienceCards />,
   },
   {
     id: "skills",
     title: "skills",
-    body: (
-      <div className="stack">
-        <p className="lead">The models, tools and languages I use day to day.</p>
-        <p className="note">Coming soon.</p>
-      </div>
-    ),
+    body: <SkillCards />,
   },
   {
     id: "demo",

@@ -38,3 +38,10 @@ export const PHOTOS: Img[] = [];
 export const HAS_GENERATED_DESK =
   DESK_BACKGROUND !== null ||
   Object.values(DESK_ASSETS).some((a) => a.image || a.video);
+
+// ====== about 面板左侧的大图 ======
+// 现在用老照片（crop 去掉扫描的白边，和桌上照片用的是同一块区域：x0, y0, x1, y1 像素）；
+// 换成证件照时改成 { src: "/desk/headshot.jpg", w: ..., h: ..., alt: "..." }，不写 crop 就按 4:5 居中裁
+export const ABOUT_PHOTO: Img & { crop?: [number, number, number, number] } = {
+  src: "/desk/oldphoto.webp", w: 972, h: 770, alt: "Jingwen as a child, sitting in tall grass", crop: [62, 80, 935, 660],
+};
