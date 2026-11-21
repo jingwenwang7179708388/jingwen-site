@@ -9,6 +9,7 @@ windows instead of the objects spreading out. The page fits the CORE region
     Blender -b -P desk3d/scene.py                          # preview  -> desk3d/renders/preview-*.png
     Blender -b -P desk3d/scene.py -- --verify              # preview + check layers rebuild the full render
     Blender -b -P desk3d/scene.py -- --mode final          # final -> public/desk/scene.jpg + public/desk/layers/*.png
+    Blender -b -P desk3d/scene.py -- --hd                  # HD object layers only -> public/desk/hd/*.webp
     DESK3D_CHECK_ONLY=1 Blender -b -P desk3d/scene.py      # layout checks only, no render
 
 Final output
@@ -16,6 +17,10 @@ Final output
                                but with the shadows they cast
   public/desk/layers/<id>.png  each clickable object + the earbuds, transparent,
                                cropped to its bounding box
+  public/desk/hd/<id>.webp     (--hd) the same 7 clickable layers, same crop and
+                               orientation, at an integer multiple of the final
+                               resolution: sharp when the page zooms the object
+                               to 80% of a 2560x1440 window at 2x pixel density
   app/desk-hotspots.json       image size, core region, click areas, layer boxes
                                (percent of the image)
 
@@ -62,6 +67,8 @@ ap.add_argument("--mode", choices=["preview", "final"], default="preview")
 ap.add_argument("--samples", type=int, default=None, help="override samples")
 ap.add_argument("--json-only", action="store_true",
                 help="final resolution, write app/desk-hotspots.json only (no render)")
+ap.add_argument("--hd", action="store_true",
+                help="render only the HD versions of the clickable layers (final geometry)")
 ap.add_argument("--verify", action="store_true",
                 help="also render the full scene and compare it with background + layers")
 args = ap.parse_args(argv)
@@ -73,7 +80,7 @@ MODES = {
     "final": dict(res=RES_FINAL, samples=256, bg="public/desk/scene.jpg",
                   layers="public/desk/layers", fmt="JPEG", copy="desk3d/renders/final-bg.jpg"),
 }
-MODE = MODES["final" if args.json_only else args.mode]
+MODE = MODES["final" if args.json_only or args.hd else args.mode]
 W, H = MODE["res"]
 
 # ---------------------------------------------------------------------------
@@ -713,22 +720,26 @@ def camera_visible(objs):
         ob.visible_camera = ob in objs
 
 
-def render_to(path, fmt, transparent=False, box=None):
+def render_to(path, fmt, transparent=False, box=None, scale=1):
+    scene.render.resolution_x, scene.render.resolution_y = W * scale, H * scale
     scene.render.film_transparent = transparent
     scene.render.use_border = box is not None
     scene.render.use_crop_to_border = box is not None
     if box:
         x0, y0, x1, y1 = box
         # border is from the bottom-left; +0.25 px keeps rounding on the right pixel
-        scene.render.border_min_x = (x0 + 0.25) / W
-        scene.render.border_max_x = (x1 + 0.25) / W
-        scene.render.border_min_y = (H - y1 + 0.25) / H
-        scene.render.border_max_y = (H - y0 + 0.25) / H
+        e = 0.25 / scale
+        scene.render.border_min_x = (x0 + e) / W
+        scene.render.border_max_x = (x1 + e) / W
+        scene.render.border_min_y = (H - y1 + e) / H
+        scene.render.border_max_y = (H - y0 + e) / H
     s = scene.render.image_settings
     s.file_format = fmt
     s.color_mode = "RGBA" if transparent else "RGB"
     if fmt == "JPEG":
         s.quality = 90
+    if fmt == "WEBP":
+        s.quality = HD_QUALITY
     scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
 
@@ -737,6 +748,31 @@ def abs_path(rel):
     p = os.path.join(ROOT, rel)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     return p
+
+
+# --hd: each clickable object again, same crop box, at an integer multiple of the
+# final resolution (integer, so the crop lands on the same pixels and the HD
+# image lines up exactly with the normal layer). The multiple is chosen so the
+# object's upright height reaches HD_TARGET_PX device pixels: 80% of a
+# 1440 px-tall window at 2x density, which is how far the page zooms it.
+HD_TARGET_PX = 0.8 * 1440 * 2
+HD_QUALITY = 88
+if args.hd:
+    hd_dir = os.path.dirname(abs_path("public/desk/hd/x"))
+    for k in CLICKABLE:
+        obj_h = spots[k]["height"] / 100 * H  # upright object height, final px
+        f = math.ceil(HD_TARGET_PX / obj_h)
+        box = layer_boxes[k]
+        camera_visible(layered_objs[k])
+        path = os.path.join(hd_dir, f"{k}.webp")
+        render_to(path, "WEBP", transparent=True, box=box, scale=f)
+        img = bpy.data.images.load(path, check_existing=False)
+        got = tuple(img.size)
+        bpy.data.images.remove(img)
+        want = ((box[2] - box[0]) * f, (box[3] - box[1]) * f)
+        print(f"[desk3d] hd {k}: x{f} {got[0]}x{got[1]} (object {obj_h * f:.0f} px tall),"
+              f" {os.path.getsize(path) / 1024:.0f} KB" + ("" if got == want else f" WARNING expected {want}"))
+    sys.exit(0)
 
 
 # Background, in two passes so the desk under each object isn't a black hole

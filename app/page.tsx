@@ -7,6 +7,7 @@ import { SECTIONS, type Section, type SectionId } from "./content";
 import { HAS_GENERATED_DESK } from "./assets";
 import { PanelBody } from "./panels";
 import { useResume } from "./resume";
+import { hdReady, hdSrc, loadHd, preloadHd } from "./hd";
 import desk from "./desk-hotspots.json";
 import blur from "./desk-blur.json"; // 虚化用的小图，由 desk3d/blur.mjs 生成
 
@@ -134,6 +135,8 @@ const hashOf = (id: SectionId) => SECTIONS.find((s) => s.id === id)?.title.repla
 const sectionOfHash = (hash: string) =>
   DOCK_ORDER.find((id) => hashOf(id) === decodeURIComponent(hash.replace(/^#/, "")));
 
+const ZOOM_H = 0.8; // 推进后物件占窗口高度（desk3d/blur.mjs、scene.py --hd 按这个数准备图）
+const ZOOM_W = 0.9;
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 const T = {
   zoom: { duration: 0.45, ease: EASE_OUT },
@@ -155,6 +158,7 @@ const CLOSE_MS = 600;
 
 type Pose = { x: number; y: number; scale: number; rotate: number };
 type Flight = { layer: Layer; rect: Box; to: Pose };
+// 推进的终点：移到画面中心、摆正，放大到物件占窗口高度约 80%
 const HOME: Pose = { x: 0, y: 0, scale: 1, rotate: 0 };
 
 function planFlight(scene: DOMRect, layerId: string): Flight | null {
@@ -167,19 +171,34 @@ function planFlight(scene: DOMRect, layerId: string): Flight | null {
     width: (layer.width / 100) * scene.width,
     height: (layer.height / 100) * scene.height,
   };
-  // 不放大：保持原来的大小，只移到画面中心并摆正
+  // 摆正后的物件大小 = 点击框（未旋转的物件外框）
+  const ow = (hotspot.width / 100) * scene.width;
+  const oh = (hotspot.height / 100) * scene.height;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
   const to = {
-    x: window.innerWidth / 2 - (rect.left + rect.width / 2),
-    y: window.innerHeight / 2 - (rect.top + rect.height / 2),
-    scale: 1,
+    x: vw / 2 - (rect.left + rect.width / 2),
+    y: vh / 2 - (rect.top + rect.height / 2),
+    scale: Math.min((ZOOM_H * vh) / oh, (ZOOM_W * vw) / ow),
     rotate: -(hotspot.rotate ?? 0),
   };
   return { layer, rect, to };
 }
 
-// 移到中心的物件：清晰图（和原位同一份，已缓存）→ 淡入替换成模糊图
+// 推进的物件：普通版本（已缓存）打底，高清版本盖在上面（同一裁切框，像素对齐）。
+// 高清图预加载好了就从第一帧开始显示；还没好就先用普通版本，加载完再换上。
+// 虚化时淡入替换成模糊图。飞回原位后这个元素移除，桌上的普通版本重新显示。
 function Hero({ flight }: { flight: Flight }) {
   const { layer, rect } = flight;
+  const [hd, setHd] = useState(() => hdReady(layer.id));
+  const [late] = useState(() => !hdReady(layer.id));
+  useEffect(() => {
+    let live = true;
+    loadHd(layer.id, true).then((ok) => live && ok && setHd(true));
+    return () => {
+      live = false;
+    };
+  }, [layer.id]);
   const b = (blur.layers as Record<string, { src: string; padX: number; padY: number }>)[layer.id];
   return (
     <motion.div
@@ -197,6 +216,17 @@ function Hero({ flight }: { flight: Flight }) {
         exit={{ opacity: 1, transition: { duration: 0.08 } }}
       >
         <Image src={layer.src} alt="" fill sizes={layerSizes(layer)} />
+        {/* 加载成功后才放进页面（失败时不出现破图） */}
+        {hd && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+          className="hero-hd"
+          src={hdSrc(layer.id)}
+          alt=""
+          decoding="async"
+          style={late ? { animation: "hd-in 0.15s ease-out" } : undefined}
+        />
+        )}
       </motion.div>
       {b && (
         <motion.img
@@ -323,6 +353,12 @@ export default function Home() {
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
   }, []);
+
+  // 高清物件：首屏加载完、浏览器空闲时预加载（手机阅读模式不加载）
+  useEffect(() => {
+    if (reading) return;
+    return preloadHd(LAYERS.filter((l) => l.clickable).map((l) => l.id));
+  }, [reading]);
 
   // 预先加载模糊图（很小，一共约 190 KB），点开时马上能用
   useEffect(() => {
@@ -468,7 +504,10 @@ export default function Home() {
                     className={`hot${h.round ? " round" : ""}${debug ? " debug" : ""}`}
                     style={{ ...pos(h), "--r": `${r}deg` } as CSSProperties}
                     onClick={(e) => openSection(t.section, e.currentTarget)}
-                    onMouseEnter={() => hoverOn(h.id)(true)}
+                    onMouseEnter={() => {
+                      hoverOn(h.id)(true);
+                      loadHd(h.id, true); // 悬停的物件优先加载高清图
+                    }}
                     onMouseLeave={() => hoverOn(h.id)(false)}
                     // 键盘聚焦时也抬起；关闭面板后焦点回来时（鼠标操作）不抬
                     onFocus={(e) => e.currentTarget.matches(":focus-visible") && hoverOn(h.id)(true)}

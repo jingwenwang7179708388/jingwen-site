@@ -12,38 +12,38 @@
   "layers": {
     "laptop": {
       "src": "/desk/blur/layer-laptop.webp",
-      "padX": 0.0688,
-      "padY": 0.0667
+      "padX": 0.0436,
+      "padY": 0.0423
     },
     "phone": {
       "src": "/desk/blur/layer-phone.webp",
-      "padX": 0.2339,
-      "padY": 0.1611
+      "padX": 0.0696,
+      "padY": 0.0481
     },
     "notebook": {
       "src": "/desk/blur/layer-notebook.webp",
-      "padX": 0.1345,
-      "padY": 0.1083
+      "padX": 0.0549,
+      "padY": 0.0442
     },
     "badge": {
       "src": "/desk/blur/layer-badge.webp",
-      "padX": 0.3771,
-      "padY": 0.2472
+      "padX": 0.0735,
+      "padY": 0.0481
     },
     "print": {
       "src": "/desk/blur/layer-print.webp",
-      "padX": 0.1461,
-      "padY": 0.1778
+      "padX": 0.0348,
+      "padY": 0.0423
     },
     "palette": {
       "src": "/desk/blur/layer-palette.webp",
-      "padX": 0.2556,
-      "padY": 0.2556
+      "padX": 0.05,
+      "padY": 0.05
     },
     "paper": {
       "src": "/desk/blur/layer-paper.webp",
-      "padX": 0.0906,
-      "padY": 0.075
+      "padX": 0.0534,
+      "padY": 0.0442
     }
   }
 }
