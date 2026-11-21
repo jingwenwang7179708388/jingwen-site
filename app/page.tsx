@@ -120,7 +120,7 @@ function DeskLayer({ layer, active, wiggle, away, onWiggleEnd }: {
 
 // ====== 点开物件：镜头推进 → 虚化 → 面板弹出 ======
 // 打开（约 0.9 秒，三步有重叠）：
-//   0–450ms   被点的物件放大、移到画面中心并摆正（占窗口高度约 80%）
+//   0–450ms   被点的物件保持原大小，移到画面中心并摆正
 //   300–700ms 整个场景（包括放大的物件）虚化，叠 20% 深色
 //   500–900ms 面板从下方 40px 升到正中央并淡入
 // 关闭（约 0.6 秒）倒放：面板下移淡出 → 虚化消失 → 物件飞回原位。
@@ -134,8 +134,6 @@ const hashOf = (id: SectionId) => SECTIONS.find((s) => s.id === id)?.title.repla
 const sectionOfHash = (hash: string) =>
   DOCK_ORDER.find((id) => hashOf(id) === decodeURIComponent(hash.replace(/^#/, "")));
 
-const ZOOM_H = 0.8; // 推进后物件占窗口高度（desk3d/blur.mjs 用同一个数换算模糊半径）
-const ZOOM_W = 0.9;
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 const T = {
   zoom: { duration: 0.45, ease: EASE_OUT },
@@ -156,7 +154,7 @@ function clock() {
 const CLOSE_MS = 600;
 
 type Pose = { x: number; y: number; scale: number; rotate: number };
-type Flight = { layer: Layer; rect: Box; to: Pose; scale: number };
+type Flight = { layer: Layer; rect: Box; to: Pose };
 const HOME: Pose = { x: 0, y: 0, scale: 1, rotate: 0 };
 
 function planFlight(scene: DOMRect, layerId: string): Flight | null {
@@ -169,24 +167,18 @@ function planFlight(scene: DOMRect, layerId: string): Flight | null {
     width: (layer.width / 100) * scene.width,
     height: (layer.height / 100) * scene.height,
   };
-  // 摆正后的物件大小 = 点击框（未旋转的物件外框）
-  const ow = (hotspot.width / 100) * scene.width;
-  const oh = (hotspot.height / 100) * scene.height;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const scale = Math.min((ZOOM_H * vh) / oh, (ZOOM_W * vw) / ow);
+  // 不放大：保持原来的大小，只移到画面中心并摆正
   const to = {
-    x: vw / 2 - (rect.left + rect.width / 2),
-    y: vh / 2 - (rect.top + rect.height / 2),
-    scale,
+    x: window.innerWidth / 2 - (rect.left + rect.width / 2),
+    y: window.innerHeight / 2 - (rect.top + rect.height / 2),
+    scale: 1,
     rotate: -(hotspot.rotate ?? 0),
   };
-  return { layer, rect, to, scale };
+  return { layer, rect, to };
 }
 
-// 推进的物件：清晰图（先用和原位一样的那份，已缓存；高清图加载完盖上）→ 淡入替换成模糊图
+// 移到中心的物件：清晰图（和原位同一份，已缓存）→ 淡入替换成模糊图
 function Hero({ flight }: { flight: Flight }) {
-  const [hi, setHi] = useState(false);
   const { layer, rect } = flight;
   const b = (blur.layers as Record<string, { src: string; padX: number; padY: number }>)[layer.id];
   return (
@@ -205,14 +197,6 @@ function Hero({ flight }: { flight: Flight }) {
         exit={{ opacity: 1, transition: { duration: 0.08 } }}
       >
         <Image src={layer.src} alt="" fill sizes={layerSizes(layer)} />
-        <Image
-          src={layer.src}
-          alt=""
-          fill
-          sizes={`${Math.round(rect.width * Math.min(flight.scale, 3))}px`}
-          style={{ opacity: hi ? 1 : 0 }}
-          onLoad={() => setHi(true)}
-        />
       </motion.div>
       {b && (
         <motion.img

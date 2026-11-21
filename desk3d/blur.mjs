@@ -1,6 +1,6 @@
 // 预先生成"虚化"用的小图，让点开物件时的虚化只靠淡入替换（只动 opacity，保持 60fps）：
 //   public/desk/blur/bg-<id>.webp   背景 + 除 <id> 以外的所有物件，缩小并模糊（bg-all：所有物件都在）
-//   public/desk/blur/layer-<id>.webp  单个物件，按推进后的大小模糊（四周留透明边，模糊不被切掉）
+//   public/desk/blur/layer-<id>.webp  单个物件（移到中心时保持原大小），模糊（四周留透明边，模糊不被切掉）
 // 位置写进 app/desk-blur.json。重新渲染书桌（desk3d/scene.py）后要重新跑：
 //   node desk3d/blur.mjs
 import fs from "node:fs";
@@ -15,8 +15,6 @@ fs.mkdirSync(outDir, { recursive: true });
 
 const BLUR_CSS = 12; // 页面上的虚化半径（CSS px，对应 blur(12px)）
 const REF = { vw: 1440, vh: 900 }; // 按这个窗口换算模糊半径
-const ZOOM_H = 0.8; // 推进后物件占窗口高度（和 app/page.tsx 的 ZOOM_H 一致）
-const ZOOM_W = 0.9;
 
 const { w: W, h: H } = desk.image;
 const core = desk.core;
@@ -51,14 +49,10 @@ for (const v of variants) {
   manifest.bg[v] = `/${file}`;
 }
 
-// ---- 推进后的单个物件 ----
-const OUT_H = 520;
+// ---- 移到中心的单个物件（原大小）----
+const OUT_H = 360;
 for (const l of desk.layers.filter((x) => x.clickable)) {
-  const hs = desk.hotspots.find((h) => h.id === l.id);
-  const ow = (hs.width / 100) * sceneW;
-  const oh = (hs.height / 100) * sceneH;
-  const s = Math.min((ZOOM_H * REF.vh) / oh, (ZOOM_W * REF.vw) / ow);
-  const shownH = (l.height / 100) * sceneH * s; // 推进后图层框的 CSS 高度
+  const shownH = (l.height / 100) * sceneH; // 图层框的 CSS 高度（不放大）
   const outH = OUT_H;
   const outW = Math.round(OUT_H * ((l.width / 100) * W) / ((l.height / 100) * H));
   const sigma = BLUR_CSS * (outH / shownH);
